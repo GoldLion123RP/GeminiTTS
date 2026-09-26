@@ -21,6 +21,10 @@ An Astro + Tailwind CSS v4 front end for GeminiTTS, built on the Geist design sy
 > **Text → Speech is verified against the real API.** Seven generations were
 > produced and used to calibrate the cost estimator.
 >
+> **There is no public demo URL.** The app needs a Node server, so it cannot
+> run on GitHub Pages — see
+> [GitHub Pages is not a compatible host](#github-pages-is-not-a-compatible-host).
+>
 > The approved design spec and the phased build plan, with a live progress
 > checklist, are tracked in `docs/superpowers/`.
 
@@ -212,6 +216,33 @@ state and costs no quota: it reads `models?pageSize=1`, never a generation.
 
 `bun run build && bun run start` is a working local deployment. There is no
 Dockerfile and no CI — neither was in scope.
+
+### GitHub Pages is not a compatible host
+
+> [!CAUTION]
+> This app is `output: 'server'` on `@astrojs/node` (`mode: 'standalone'`).
+> **GitHub Pages can only serve static files**, so a Pages build of this repo
+> cannot run the app: there is no `dist/server/entry.mjs` to execute, no Node
+> runtime, and no way to supply `GEMINI_API_KEY`. Every `/api/*` route —
+> `/api/health`, `/api/live-token`, `/api/transcribe`, `/api/synthesize`,
+> `/api/extract`, `/api/estimate` — is a server route and will simply be absent
+> from the published output.
+
+A Pages build configured on `main` `/` (root) without a workflow uses GitHub's
+legacy publishing path, which copies the branch's source tree, not an Astro
+build. The result is a directory of `.md` and `.ts` files, not the site.
+
+Two workable routes, in order of effort:
+
+1. **Static build + Pages Actions** — switch to `output: 'static'`, pre-render
+   the three pages, and move the Gemini calls to the existing BYOK direct path
+   in `src/lib/client/gemini-direct.ts` so the browser talks to Google and no
+   server secret is needed at all. This deletes the server-rendering guarantee
+   documented in `AGENTS.md` and is a real architectural change, not a config
+   tweak.
+2. **A Node-capable host** — Railway, Render, Fly, or any VPS running
+   `bun run build && bun run start`. Zero code change; this is what the app
+   expects.
 
 ---
 
