@@ -8,13 +8,13 @@ colors:
   on-primary: "#ffffff"
   ink: "#171717"
   body: "#4d4d4d"
-  mute: "#8f8f8f"
-  faint: "#a1a1a1"
+  mute: "#6b6b6b"
+  faint: "#727272"
   hairline: "#ebebeb"
   hairline-soft: "#f2f2f2"
   canvas: "#fafafa"
   canvas-elevated: "#ffffff"
-  link: "#0070f3"
+  link: "#006ce5"
   link-deep: "#0761d1"
   link-soft: "#d3e5ff"
   error: "#ee0000"
@@ -257,8 +257,18 @@ Surfaces barely lift. Cards are white (`{colors.canvas-elevated}`) on the #fafaf
 
 ### Brand & Accent
 - **Ink** (`{colors.primary}` / `{colors.ink}` — #171717): the brand's defining near-black. Headings, primary CTA fill, logo, and the darkest text tier. Paired with `{colors.on-primary}` (white).
-- **Vercel Blue** (`{colors.link}` — #0070f3): the link and accent blue — inline links, pricing highlights, focus signals. Darker press tone `{colors.link-deep}` (#0761d1), pale wash `{colors.link-soft}` (#d3e5ff).
+- **Vercel Blue** (`{colors.link}` — #006ce5): the link and accent blue — inline links, pricing highlights, focus signals. Darker press tone `{colors.link-deep}` (#0761d1), pale wash `{colors.link-soft}` (#d3e5ff).
 - **Violet** (`{colors.violet}` — #7928ca), **Cyan** (`{colors.cyan}` — #50e3c2), **Pink** (`{colors.pink}` — #ff0080), **Magenta** (`{colors.magenta}` — #eb367f): the chromatic accent family, used sparingly for illustration accents and as mesh-gradient stops, never as chrome fills.
+
+> **Accessibility substitution, 2026-09-26 (Phase 2).** Three values above differ
+> from the literal Vercel analysis: `mute` #8f8f8f → **#6b6b6b**, `faint` #a1a1a1 →
+> **#727272**, `link` #0070f3 → **#006ce5**. The originals measured 3.10:1,
+> 2.58:1 and 4.36:1 against the near-white canvas — all below WCAG AA's 4.5:1 for
+> body text, and every one of them is used for text at 12–16px. The substitutions
+> are the *lightest* change that clears the bar, and the grey ladder keeps its
+> strict ordering (ink 17.18:1 → body 8.10:1 → mute 5.11:1 → faint 4.61:1). The
+> canvas, elevated, hairline, and all accent colours are unchanged: the reference
+> system's character is intact, only its illegible floor was lifted.
 
 ### Surface
 - **Canvas** (`{colors.canvas}` — #fafafa): the default page background — the near-white sheet everything sits on.
@@ -268,8 +278,8 @@ Surfaces barely lift. Cards are white (`{colors.canvas-elevated}`) on the #fafaf
 ### Text
 - **Ink** (`{colors.ink}` — #171717): primary headings and high-emphasis text.
 - **Body** (`{colors.body}` — #4d4d4d): standard paragraph and secondary copy, nav links.
-- **Mute** (`{colors.mute}` — #8f8f8f): lower-emphasis captions, logo-strip labels, metadata.
-- **Faint** (`{colors.faint}` — #a1a1a1): the lowest tier — placeholders, disabled labels.
+- **Mute** (`{colors.mute}` — #6b6b6b): lower-emphasis captions, logo-strip labels, metadata.
+- **Faint** (`{colors.faint}` — #727272): the lowest tier — placeholders, disabled labels.
 
 ### Borders
 - **Hairline** (`{colors.hairline}` — #ebebeb): the 1px border on every card, input, and divider — the structural workhorse of the system.
@@ -277,7 +287,7 @@ Surfaces barely lift. Cards are white (`{colors.canvas-elevated}`) on the #fafaf
 ### Semantic
 - **Error** (`{colors.error}` — #ee0000): validation / destructive, with a deep press tier `{colors.error-deep}` (#c50000).
 - **Warning** (`{colors.warning}` — #f5a623): caution states, with soft `{colors.warning-soft}` and deep `{colors.warning-deep}` tiers.
-- **Success** maps to `{colors.link}` (#0070f3) — the blue doubles as the positive/active signal.
+- **Success** maps to `{colors.link}` (#006ce5 light / #5aa9ff dark) — the blue doubles as the positive/active signal.
 
 ### Brand Gradient
 Three named two-stop gradients form the legacy Vercel gradient identity, surviving as illustration and accent washes:
@@ -285,6 +295,42 @@ Three named two-stop gradients form the legacy Vercel gradient identity, survivi
 - **Preview**: `{colors.gradient-preview-start}` (#7928ca) → `{colors.gradient-preview-end}` (#ff0080) — violet to pink.
 - **Ship**: `{colors.gradient-ship-start}` (#ff4d4d) → `{colors.gradient-ship-end}` (#f9cb28) — red to amber.
 These, blended together, form the hero's multi-stop mesh.
+
+### Dark Theme
+
+The system is **one design, two themes.** Dark is not a second palette to be
+designed — it re-points the same token names at new values, so every component
+inverts with no per-element dark styles. The attribute is `data-theme` on
+`<html>`, set before first paint by an inline synchronous head script; the
+user's choice is `light`, `dark`, or `system` and is the default `system`.
+
+| Token | Light | Dark | Ratio (worst surface) |
+|---|---|---|---|
+| `{colors.canvas}` | #fafafa | #0a0a0a | — |
+| `{colors.canvas-elevated}` | #ffffff | #141414 | — |
+| `{colors.hairline}` | #ebebeb | #262626 | — |
+| `{colors.ink}` | #171717 | #ededed | 15.74:1 |
+| `{colors.body}` | #4d4d4d | #b0b0b0 | 8.49:1 |
+| `{colors.mute}` | #6b6b6b | #949494 | 6.07:1 |
+| `{colors.faint}` | #727272 | #8a8a8a | 5.34:1 |
+| `{colors.link}` | #006ce5 | #5aa9ff | 7.50:1 |
+| `{colors.error}` | #ee0000 | #ff7b7b | 7.34:1 |
+
+Rules for the dark ramp, all of them load-bearing:
+
+- **The mesh gradient is never remapped.** Its stops are the brand's chromatic
+  identity and DESIGN.md confines it to the hero. On near-black they read
+  brighter while keeping their hue, which is the intent for a glow.
+- **The dark grey ladder does not mirror the light one.** Light steps
+  17.18 → 8.10 → 5.11 → 4.61; dark compresses to 15.74 → 8.49 → 6.07 → 5.34.
+  A literal mirror would push `faint` under 4.5:1 on #141414. The ladder is
+  ordered, not evenly spaced.
+- **Every text token clears 4.5:1.** All body copy is 12–16px, so nothing here
+  qualifies as WCAG "large text" and the 3:1 allowance never applies.
+- **Semantic colours lighten, they do not flip hue.** Error goes to #ff7b7b and
+  warning to #f0b357 — the light values' luminance is unreachable on near-black.
+- Contrast ratios are **computed, not eyeballed**; a perceptual ramp cannot be
+  validated by eye. Reproduction command: see `docs/development.md`.
 
 ## Typography
 

@@ -42,16 +42,31 @@
 
 @theme {
   /* --- colors: DESIGN.md `colors:` (hex, verbatim) ------------------ */
-  --color-ink: #171717; /* colors.ink / colors.primary */
+  /* --- colors: DESIGN.md `colors:` (hex, verbatim) ------------------
+
+     Phase 2.1/2.4 changed three of these from the DESIGN.md literals:
+     mute, faint and link. The originals FAILED WCAG AA on the near-white
+     canvas, and DESIGN.md is the description of the reference system, not a
+     licence to ship inaccessible text here. Every value below is measured,
+     not eyeballed — see the contrast table in the dark-theme block further
+     down and `docs/development.md` for the reproduction command. The three
+     substitutions are recorded in DESIGN.md's Colors section.
+
+     ink > body > mute > faint is a LADDER, so the substitutions must stay
+     strictly ordered. A search that cleared the 4.5:1 bar independently for
+     each token collapsed mute and faint onto the same hex; keeping them
+     apart costs almost nothing and preserves the tiering. */
+
+  --color-ink: #171717; /* colors.ink / colors.primary — 17.18:1 */
   --color-on-primary: #ffffff; /* colors.on-primary */
-  --color-body: #4d4d4d;
-  --color-mute: #8f8f8f;
-  --color-faint: #a1a1a1;
+  --color-body: #4d4d4d; /* 8.10:1 */
+  --color-mute: #6b6b6b; /* 5.11:1 — DESIGN.md literal #8f8f8f was 3.10:1 */
+  --color-faint: #727272; /* 4.61:1 — DESIGN.md literal #a1a1a1 was 2.58:1 */
   --color-hairline: #ebebeb;
   --color-hairline-soft: #f2f2f2;
   --color-canvas: #fafafa;
   --color-elevated: #ffffff; /* colors.canvas-elevated */
-  --color-link: #0070f3;
+  --color-link: #006ce5; /* 4.70:1 — DESIGN.md literal #0070f3 was 4.36:1 */
   --color-link-deep: #0761d1;
   --color-link-soft: #d3e5ff;
   --color-error: #ee0000;
@@ -181,6 +196,77 @@
   :focus-visible {
     outline: 2px solid var(--color-link);
     outline-offset: 2px;
+  }
+
+  /* --- Phase 2.2: the dark ramp --------------------------------------
+
+     `data-theme` is set on <html> by the inline bootstrap in Layout.astro
+     before first paint, so there is no flash and no hydration dependency.
+
+     This block re-declares the same custom properties, and that is enough:
+     every colour utility compiles to `var(--color-x)` (verified in the built
+     artifact — `.bg-canvas{background-color:var(--color-canvas)}`), so
+     flipping the variables re-binds the entire palette with zero component
+     edits. The alternative, `dark:` variants on every element, would have
+     touched every file in the tree for the same result.
+
+     WHY IT LIVES IN `@layer base`: Tailwind emits
+     `@layer properties, theme, base, components, utilities`, and the theme
+     layer is where `@theme` lands (as `@layer theme{:root,:host{…}}`). A rule
+     in `base` is therefore emitted after the `:root` defaults and, being
+     more specific, wins. This is the same layer-order-beats-specificity
+     trap Phase 1 hit with the skip link, used deliberately this time.
+
+     The mesh gradient is deliberately NOT remapped. DESIGN.md confines it to
+     the hero and its stops are the brand's chromatic identity; on a near
+     black canvas the same stops read brighter but keep their hue, which is
+     the intended behaviour for a glow on dark.
+
+     Every text value below was computed, not chosen by eye. Contrast is
+     arithmetic and this is the part of a dark ramp that must not be
+     eyeballed. Ratios are against the darkest surface (#141414) unless
+     noted, and 4.5:1 is the bar for every token here — all body copy is
+     12–16px, so nothing qualifies as WCAG "large text".
+
+       ink    #ededed  15.74:1     body   #b0b0b0   8.49:1
+       mute   #949494   6.07:1     faint  #8a8a8a   5.34:1
+       link   #5aa9ff   7.50:1     error  #ff7b7b   7.34:1
+
+     The lightness steps are deliberately non-uniform with the light theme
+     (#ededed→#b0b0b0→#949494→#8a8a8a compresses toward the bottom). A
+     mirror of the light ladder would put `faint` well under 4.5:1 here. */
+  [data-theme='dark'] {
+    color-scheme: dark;
+
+    --color-canvas: #0a0a0a;
+    --color-elevated: #141414;
+    --color-hairline-soft: #1a1a1a;
+    --color-hairline: #262626;
+
+    --color-ink: #ededed;
+    --color-on-primary: #0a0a0a;
+    --color-body: #b0b0b0;
+    --color-mute: #949494;
+    --color-faint: #8a8a8a;
+
+    --color-link: #5aa9ff;
+    --color-link-deep: #8cc4ff;
+    --color-link-soft: #16324d;
+
+    --color-error: #ff7b7b;
+    --color-error-deep: #ff4d4d;
+    --color-warning: #f0b357;
+    --color-warning-deep: #f5c67f;
+    --color-warning-soft: #3a2a10;
+    --color-violet: #c39bff;
+    --color-violet-soft: #2e2340;
+  }
+
+  /* The `warning-soft` fill is a WARNING BACKGROUND, not text, so it is not
+     held to the 4.5:1 text bar — but the label drawn on it must clear it.
+     Held in `base` rather than on the element so the pair lives together. */
+  [data-theme='dark'] .bg-warning-soft {
+    color: var(--color-warning-deep);
   }
 }
 

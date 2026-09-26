@@ -10,6 +10,7 @@
     "build": "astro build",
     "preview": "astro preview",
     "check": "astro check",
+    "check:contrast": "node scripts/check-contrast.mjs",
     "docs:sync": "node scripts/sync-docs.mjs",
     "astro": "astro",
     "start": "node --env-file-if-exists=.env dist/server/entry.mjs",

@@ -20,6 +20,7 @@
  * (see the note there) — Phase 3 flips their flags.
  */
 import { isActive, visibleNavItems } from '../lib/nav';
+import ThemeToggle from './ThemeToggle.astro';
 
 const pathname = Astro.url.pathname;
 const items = visibleNavItems();
@@ -79,6 +80,16 @@ const items = visibleNavItems();
 				))
 			}
 		</nav>
+
+		{/* Phase 2.3: theme control. Sits after the nav, before the mobile
+		    trigger, so on desktop the order is wordmark → nav → theme, and on
+		    a narrow screen the trigger stays the right-most control. Hidden
+		    below `sm` only to keep the 56px row from crowding at 320px — the
+		    theme is still reachable on a phone by widening, and the mobile
+		    menu is the primary navigation there. */}
+		<div class="hidden sm:block">
+			<ThemeToggle />
+		</div>
 
 		{/* Mobile trigger. Only rendered when there is more than one route —
 		    a hamburger that opens a single link is a control that lies about

@@ -18,12 +18,45 @@ Detail behind [`AGENTS.md`](../AGENTS.md). Read on demand.
 | `bun run check` | Type check — `astro check`, must report zero errors |
 | `bunx astro --help` | Astro CLI reference |
 | `bun run docs:sync` | Regenerate `docs/README.md` and `docs/archive/README.md` |
+| `bun run check:contrast` | Recompute the WCAG contrast of every text token on every surface, both themes |
 
 `bun run build` and `bun run check` are the two gates. Run both before opening a
 pull request. There is no CI enforcing them yet.
 
 `bun run start` exists because `node dist/server/entry.mjs` **does not load
 `.env`** — see [The standalone server does not load `.env`](#the-standalone-server-does-not-load-env).
+
+## Theming and contrast
+
+Both themes are one token set re-pointed at different values. Colour utilities
+compile to `var(--color-x)`, so `[data-theme='dark']` in `global.css` re-binds
+the whole palette and no component carries a dark-mode style. `data-theme` is
+written on `<html>` by the inline synchronous script in `Layout.astro`, before
+first paint — it is `is:inline` precisely because a hoisted module script is
+`defer`red and would restore the theme *after* the page had already painted.
+
+**Contrast is computed, not eyeballed.** A perceptual ramp cannot be validated
+by looking at it, and the light theme's original `mute` / `faint` / `link`
+values all failed WCAG AA while looking fine. Re-run after any colour token
+change:
+
+```
+bun run check:contrast
+```
+
+Both themes must report zero failures. Every text token is held to 4.5:1
+because all body copy is 12–16px and nothing qualifies as WCAG "large text".
+
+### Verifying a theme actually applied
+
+```powershell
+$r = Invoke-WebRequest http://localhost:4321/ -UseBasicParsing
+# the bootstrap must be a plain <script> inside <head>, never type="module"
+($r.Content.IndexOf('geminitts-theme') -lt $r.Content.IndexOf('</head>'))
+```
+
+A `dark:` class in the served HTML means the no-flash script failed and the
+page will flash light before correcting itself.
 
 ## Project structure
 
@@ -204,12 +237,18 @@ error.
 
 ## Known gaps
 
+- **Input borders are below WCAG 1.4.11.** `hairline` sits at 1.14:1 on canvas
+  and 1.19–1.22:1 in cards, where 3:1 is the reference for a boundary that
+  identifies a control. Card borders and dividers are exempt (decorative), but
+  an input's border is arguably not. `bun run check:contrast` reports this pair
+  as `warn` rather than failing it. Lifting `hairline` to 3:1 would contradict
+  DESIGN.md's "define cards and inputs with a 1px hairline before any shadow"
+  and turn every card into a heavy grey rule, so it was left as a recorded gap
+  rather than silently "fixed" — the inputs do carry a label and a 4.70:1
+  focus ring as other affordances.
 - **No fonts installed.** `DESIGN.md` specifies Geist Sans and Geist Mono, but
   `src/assets/` holds only SVGs and `public/` only favicons. The documented
   `Arial` / `ui-monospace` fallbacks are what actually render.
-- **No `@theme` block.** `src/styles/global.css` is bare
-  `@import 'tailwindcss'`, so no `DESIGN.md` token is mapped to a Tailwind
-  utility yet.
 - **No CI.** The build and type-check gates are manual.
 - **`CHARS_PER_SECOND` is uncalibrated.** `src/lib/audio/estimate.ts` uses
   `14` as a placeholder for speech rate, so every duration and cost figure the

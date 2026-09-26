@@ -1,0 +1,132 @@
+---
+/**
+ * Theme toggle — the tri-state control for `data-theme` on <html>.
+ *
+ * WHY TRI-STATE AND NOT A SINGLE TOGGLE
+ *
+ * The underlying preference has three values — `light`, `dark`, `system` —
+ * because "follow my OS" is a distinct user choice from either fixed
+ * appearance. A two-state toggle cannot represent it: switching to dark, then
+ * toggling again, would land on light even if the user had never asked for
+ * light. A toggle that silently discards `system` is a control that lies
+ * about the state it is in.
+ *
+ * A11y: this is a group of radio buttons, not a toggle button. A radio group
+ * is the honest model — the user is choosing one of three mutually exclusive
+ * options, and arrow-key navigation is the expected affordance. `aria-pressed`
+ * is deliberately NOT used: it would announce a single toggle with three
+ * states, which is exactly the misrepresentation above. Native `<input
+ * type="radio">` is used rather than `role="radio"` on a `<button>` so
+ * grouping, roving focus and keyboard semantics come from the platform
+ * instead of being reimplemented.
+ *
+ * Progressive enhancement: the inputs are real radios, so the control is
+ * operable and readable with JS disabled — the form submits nowhere, and
+ * the labels still identify the state. The script only adds the behaviour.
+ *
+ * No icons are drawn as inline SVG here. The three states are short English
+ * labels, which read correctly in a screen reader and do not depend on a
+ * symbol the user has to learn.
+ *
+ * DESIGN.md: this is a `button-ghost-sm` control, so `rounded-app` (6px) —
+ * NOT `rounded-full`. DESIGN.md Don'ts: "Don't mix the button shapes within
+ * one context". The header's nav items are `nav-link` pills; this is app
+ * chrome.
+ */
+const options = [
+	{ value: 'light', label: 'Light' },
+	{ value: 'dark', label: 'Dark' },
+	{ value: 'system', label: 'System' },
+];
+---
+
+{/*
+	`fieldset` + `legend` because a radio group is a labelled set of choices.
+	`legend` is visually hidden rather than removed: it is the group's
+	accessible name, and `sr-only` keeps it available to assistive tech
+	without putting a visible heading in a 56px-tall header.
+*/}
+<fieldset class="contents" data-theme-toggle>
+	<legend class="sr-only">Colour theme</legend>
+	<div
+		class="flex items-center gap-0.5 rounded-app border border-hairline bg-elevated p-0.5"
+	>
+		{
+			options.map((option) => (
+				<label
+					class="relative cursor-pointer rounded-app px-2 py-1 text-xs leading-4 font-medium text-body transition-colors has-[:checked]:bg-hairline-soft has-[:checked]:text-ink has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-link"
+				>
+					{/*
+						`opacity-0` rather than `sr-only`: the input must stay
+						hittable and focusable, and it must span the label so
+						the whole pill is the hit target.
+
+						The focus ring is drawn on the LABEL via `has-[:focus-visible]`
+						instead of on the input. Left on the input, the ring would
+						trace that element's own square border-box — a square
+						outline around a 6px-rounded pill, which is the sort of
+						thing that is invisible in a screenshot and obvious in
+						use.
+					*/}
+					<input
+						type="radio"
+						name="theme"
+						value={option.value}
+						class="absolute inset-0 cursor-pointer appearance-none opacity-0"
+					/>
+					{option.label}
+				</label>
+			))
+		}
+	</div>
+</fieldset>
+
+<script>
+	// Theme toggle behaviour.
+	//
+	// The initial checked state is applied by this script rather than being
+	// rendered server-side, because the stored preference lives in
+	// localStorage and is unknowable at build time. Doing it here — rather
+	// than in the head bootstrap — keeps the bootstrap to one job: setting
+	// `data-theme` before paint. Setting `checked` on the control is a
+	// cosmetic concern and can safely happen after it.
+	//
+	// If the bootstrap is missing for any reason, this script still leaves a
+	// working, correctly-labelled control — it just starts on `system`.
+	document.querySelectorAll<HTMLFieldSetElement>('[data-theme-toggle]').forEach((group) => {
+		const inputs = Array.from(group.querySelectorAll<HTMLInputElement>('input[name="theme"]'));
+		if (inputs.length === 0) return;
+
+		const api = (window as unknown as {
+			__geminiTtsTheme?: { get: () => string; set: (next: string) => void };
+		}).__geminiTtsTheme;
+
+		const stored = api ? api.get() : 'system';
+		const initial = inputs.find((input) => input.value === stored) ?? inputs[inputs.length - 1];
+		initial.checked = true;
+
+		// Dedupe the group name per instance so two toggles on one page
+		// cannot silently become a single 6-option radio group.
+		const groupName = `theme-${Math.random().toString(36).slice(2, 8)}`;
+		inputs.forEach((input) => {
+			input.name = groupName;
+
+			input.addEventListener('change', () => {
+				if (!input.checked) return;
+				if (api) {
+					api.set(input.value);
+					return;
+				}
+				// No bootstrap (should not happen): still apply the theme so
+				// the control is not inert.
+				const resolved =
+					input.value === 'system'
+						? window.matchMedia('(prefers-color-scheme: dark)').matches
+							? 'dark'
+							: 'light'
+						: input.value;
+				document.documentElement.setAttribute('data-theme', resolved);
+			});
+		});
+	});
+</script>

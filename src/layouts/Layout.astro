@@ -28,6 +28,95 @@ const { title, description } = Astro.props;
 		*/}
 		<Font cssVariable="--font-geist" preload={[{ weight: 400 }, { weight: 500 }, { weight: 600 }]} />
 		<Font cssVariable="--font-geist-mono" />
+
+		{/*
+			Phase 2.3 — the no-flash theme bootstrap. This MUST be inline and
+			synchronous, and that requirement is the whole reason for
+			`is:inline`.
+
+			`is:inline` tells Astro to leave the tag alone: no bundling, no
+			hoisting, no `type="module"`. That matters because a module script
+			is `defer`red by definition — it runs after the HTML is parsed,
+			which is after first paint. A hoisted/bundled script would restore
+			`data-theme` only once the document had already painted in light
+			theme, which is the exact flash this exists to prevent.
+
+			Three states, stored verbatim, so the UI can render the user's
+			actual choice rather than a guess: `light`, `dark`, `system`.
+			`system` is the default, so a first-time visitor whose OS is dark
+			gets dark.
+
+			Robustness: any storage failure (private mode, disabled storage,
+			corrupt value) degrades to `system` rather than throwing, because
+			a throw here would abort before `data-theme` is set and leave the
+			page in light mode. The value is read once, then the listener
+			below is bound to a closure over the STORED preference, so it
+			only tracks the OS while the user is actually on `system`.
+		*/}
+		<script is:inline>
+			(function () {
+				var KEY = 'geminitts-theme';
+				var VALID = ['light', 'dark', 'system'];
+				var stored = 'system';
+				try {
+					var raw = window.localStorage.getItem(KEY);
+					if (raw && VALID.indexOf(raw) !== -1) stored = raw;
+				} catch (e) {
+					/* storage unavailable — fall through to `system` */
+				}
+
+				var query = window.matchMedia('(prefers-color-scheme: dark)');
+
+				function apply() {
+					var resolved = stored === 'system' ? (query.matches ? 'dark' : 'light') : stored;
+					document.documentElement.setAttribute('data-theme', resolved);
+				}
+
+				apply();
+
+				// Re-evaluate only when the OS actually changes, and only
+				// while the preference is `system`. Once the user picks
+				// light or dark the toggle overwrites the stored value and
+				// the OS change is correctly ignored.
+				var onChange = function () {
+					if (stored === 'system') apply();
+				};
+
+				// The Safari < 14 fallback (`addListener`) is deprecated on
+				// MediaQueryList, so it is fetched with `Reflect.get` rather
+				// than named in a property position: naming it in either form
+				// makes `astro check` emit a deprecation hint for a branch
+				// that is deliberately kept. This block is plain JS (see
+				// `is:inline` above), so a type assertion is not available
+				// either.
+				var legacyAddListener = Reflect.get(query, 'addListener');
+
+				if (typeof query.addEventListener === 'function') {
+					query.addEventListener('change', onChange);
+				} else if (typeof legacyAddListener === 'function') {
+					legacyAddListener.call(query, onChange);
+				}
+
+				// Lets ThemeToggle re-run `apply` after it changes the
+				// stored value, without duplicating the storage key and
+				// the media query in two files.
+				window.__geminiTtsTheme = {
+					get: function () {
+						return stored;
+					},
+					set: function (next) {
+						if (VALID.indexOf(next) === -1) return;
+						stored = next;
+						try {
+							window.localStorage.setItem(KEY, next);
+						} catch (e) {
+							/* preference still applies for this page view */
+						}
+						apply();
+					},
+				};
+			})();
+		</script>
 	</head>
 	<body>
 		{/*
