@@ -100,3 +100,10 @@ function normalise(text: string): string {
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
+
+/**
+ * 20 MB, matching the inline ceiling Gemini documents for audio and generous
+ * for a text document. Read before decoding, so a hostile 500 MB upload is
+ * rejected without being materialised in memory.
+ */
+export const MAX_EXTRACT_BYTES = 20 * 1024 * 1024;

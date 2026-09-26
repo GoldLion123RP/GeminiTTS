@@ -42,6 +42,7 @@ const { POST: liveToken } = await import('./live-token');
 const { POST: transcribeRoute } = await import('./transcribe');
 const { POST: estimate } = await import('./estimate');
 const { POST: synthesizeRoute } = await import('./synthesize');
+const { POST: extractRoute } = await import('./extract');
 
 type Context = Parameters<typeof estimate>[0];
 /** `APIRoute` may return a Response or a Promise of one; every handler here is async. */
@@ -237,6 +238,50 @@ describe('POST /api/synthesize', () => {
   });
 });
 
+describe('POST /api/extract', () => {
+  test('returns the text and character count for a plain file', async () => {
+    const data = btoa('Hello from a text file.');
+    const response = await call(extractRoute, { name: 'notes.txt', data });
+    const body = (await response.json()) as Record<string, unknown>;
+
+    expect(response.status).toBe(200);
+    expect(body.text).toBe('Hello from a text file.');
+    expect(body.characters).toBe('Hello from a text file.'.length);
+    expect(body.fileName).toBe('notes.txt');
+  });
+
+  test('strips a data-URL prefix before decoding', async () => {
+    const data = `data:text/plain;base64,${btoa('Stripped.')}`;
+    const body = (await (await call(extractRoute, { name: 'a.md', data })).json()) as { text: string };
+    expect(body.text).toBe('Stripped.');
+  });
+
+  test('a .pdf that is not a PDF is a 400 carrying the parser wording, not a crash', async () => {
+    const response = await call(extractRoute, { name: 'scan.pdf', data: btoa('not a pdf') });
+    const body = (await response.json()) as { error: string; fileName: string };
+
+    expect(response.status).toBe(400);
+    expect(body.error).toMatch(/could not be read/i);
+    expect(body.fileName).toBe('scan.pdf');
+  });
+
+  test('an unsupported extension names the supported set', async () => {
+    const response = await call(extractRoute, { name: 'photo.png', data: btoa('x') });
+    expect(response.status).toBe(400);
+    expect((await response.json() as { error: string }).error).toContain('.txt, .md, .pdf, or .docx');
+  });
+
+  test('rejects a missing name or data field', async () => {
+    expect((await call(extractRoute, { data: btoa('x') })).status).toBe(400);
+    expect((await call(extractRoute, { name: 'a.txt' })).status).toBe(400);
+  });
+
+  test('rejects an oversized upload before decoding it', async () => {
+    const oversized = 'A'.repeat(30 * 1024 * 1024);
+    expect((await call(extractRoute, { name: 'big.txt', data: oversized })).status).toBe(400);
+  });
+});
+
 describe('secret safety', () => {
   test('no endpoint echoes the API key in any response', async () => {
     const responses = await Promise.all([
@@ -244,6 +289,7 @@ describe('secret safety', () => {
       call(transcribeRoute, { audio: 'QUJD' }),
       call(estimate, { text: 'Hello.' }),
       call(synthesizeRoute, { text: 'Hello.', voice: 'Kore' }),
+      call(extractRoute, { name: 'notes.txt', data: btoa('Hello.') }),
     ]);
 
     for (const response of responses) {

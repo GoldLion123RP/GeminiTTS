@@ -1,10 +1,11 @@
 ---
 import Hero from '../components/Hero.astro';
 import Layout from '../layouts/Layout.astro';
+import TtsPanel from '../components/TtsPanel.astro';
 
-// The two panels land in Phase 5 (Text/File → Speech) and Phase 6
-// (Speech → Text). Nothing is stubbed here: an empty mount point that renders
-// a placeholder would be a state the design system never sanctioned.
+// Phase 5 (Text/File → Speech) is mounted below. Phase 6 adds
+// SttPanel.astro alongside it. Nothing is stubbed: an empty mount point that
+// renders a placeholder would be a state the design system never sanctioned.
 ---
 
 <Layout
@@ -18,7 +19,8 @@ import Layout from '../layouts/Layout.astro';
 	/>
 
 	<main id="panels" class="container-page pb-24">
-		<!-- Phase 5 mounts TtsPanel.astro; Phase 6 mounts SttPanel.astro. -->
+		{/* Phase 6 mounts SttPanel.astro next to this one. */}
+		<TtsPanel />
 	</main>
 
 	{/* DESIGN.md `components.footer`: canvas background, top hairline, body

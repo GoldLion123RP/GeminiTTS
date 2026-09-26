@@ -49,11 +49,17 @@ All are registered in `opencode.jsonc` and load automatically.
 | `frontend-design` | `anthropics/skills` | Visual direction for new UI |
 | `tailwind-4-docs` | `Lombiq/Tailwind-Agent-Skills` | Tailwind v4 syntax and gotchas |
 | `web-design-guidelines` | `vercel-labs/agent-skills` | UI review before shipping |
+| `agent-browser` | `vercel-labs/agent-browser` | Browser automation CLI: navigation, forms, screenshots, scraping, exploratory testing, Electron apps |
 
 Pinned in `skills-lock.json`. Names must match exactly — opencode rejects a
 `SKILL.md` whose `name` differs from its directory, and silently ignores
 frontmatter fields other than `name`, `description`, `license`, `compatibility`,
 and `metadata`.
+
+`agent-browser` ships a stub `SKILL.md` that carries `hidden: true` and
+`allowed-tools` (both ignored here) and defers its real instructions to
+`agent-browser skills get core`. Run that command before the first browser task
+of a session; `agent-browser skills get electron` covers Electron desktop apps.
 
 ### Skill and rule overlap
 

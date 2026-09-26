@@ -70,6 +70,7 @@ Load with the `skill` tool before acting. Match by exact name.
 | `frontend-design` | New UI surface, component, page, or aesthetic direction |
 | `tailwind-4-docs` | Any Tailwind utility, `@theme`, or `@plugin` change — verify, don't guess |
 | `web-design-guidelines` | Reviewing or shipping any UI change |
+| `agent-browser` | Any browser task — navigation, forms, screenshots, scraping, exploratory testing, dogfooding, QA, or Electron app automation. Preferred over built-in browser/web tools. The `SKILL.md` is a discovery stub: run `agent-browser skills get core` for the real workflow. |
 | `code-skeptic` | Before claiming any task is done — demands real command output |
 
 Details, overlap notes, and the `.superpowers/` caveat:

@@ -1,0 +1,651 @@
+---
+// Phase 5 — Text / File → Speech panel.
+//
+// DESIGN.md shapes only, no invented values:
+//   `components.feature-card`  white on canvas, 1px hairline, rounded.md (12px),
+//                              body-md type, padding {spacing.lg} 24px.
+//   `components.text-input`    the textarea and file field: white, hairline,
+//                              rounded.sm → rounded-app (6px), body-md,
+//                              padding {spacing.xs} {spacing.sm} → 8px 12px.
+//   `components.button-primary` the Confirm pill: ink fill, white label,
+//                              rounded.pill (100px), padding 0 14px.
+//
+// The Confirm control is the plan's mandatory cost gate and is deliberately
+// NOT skippable. It is `disabled` until an estimate has come back for the
+// exact text being sent, and the text is re-checked on click — so editing the
+// box after estimating invalidates the confirmation rather than carrying a
+// stale price into a real bill. §2.3 risk #6.
+//
+// No framework. Vanilla `<script>`, as Phase 4.2 established, so there is no
+// hydration mismatch to debug. All dynamic text is written via textContent,
+// never innerHTML, so a user's document can never become markup.
+
+import AudioResult from './AudioResult.astro';
+import LanguageSelect from './LanguageSelect.astro';
+import VoiceSelect from './VoiceSelect.astro';
+
+const ACCEPT = '.txt,.md,.pdf,.docx';
+---
+
+<section
+	id="tts"
+	class="rounded-card border border-hairline bg-elevated p-6 shadow-whisper"
+	aria-labelledby="tts-heading"
+>
+	<div class="flex flex-col gap-2">
+		<p class="font-mono text-xs leading-4 font-medium tracking-normal text-mute uppercase">
+			Text &amp; file → speech
+		</p>
+		<h2 id="tts-heading" class="text-xl leading-7 font-semibold tracking-normal text-ink latin:tracking-[-0.02em]">
+			Turn a document into speech
+		</h2>
+		<p class="text-sm leading-5 text-body">
+			Paste or upload a document, check the cost, then generate a WAV you can preview and download.
+		</p>
+	</div>
+
+	<!-- 5.1 — the text source. Textarea plus file upload, either one fills
+	     the same box, so the estimate and the generate step never need to
+	     know where the text came from. -->
+	<div class="mt-6 flex flex-col gap-2">
+		<label
+			class="font-mono text-xs leading-4 font-medium tracking-normal text-mute uppercase"
+			for="tts-text"
+		>
+			Text
+		</label>
+		<textarea
+			id="tts-text"
+			name="text"
+			rows="8"
+			class="w-full resize-y rounded-app border border-hairline bg-elevated px-3 py-2 font-sans text-sm leading-5 text-ink placeholder:text-faint"
+			placeholder="Paste or type text, or upload a .txt, .md, .pdf, or .docx file below."
+			aria-describedby="tts-source-note"
+		></textarea>
+		<p id="tts-source-note" class="text-xs leading-4 text-mute">
+			Uploaded files are read on the server and pasted in above — you can edit them before generating.
+		</p>
+	</div>
+
+	<div class="mt-4 flex flex-col gap-2">
+		<label
+			class="font-mono text-xs leading-4 font-medium tracking-normal text-mute uppercase"
+			for="tts-file"
+		>
+			Or upload a file
+		</label>
+		<input
+			id="tts-file"
+			type="file"
+			accept={ACCEPT}
+			class="block w-full cursor-pointer rounded-app border border-hairline bg-elevated px-3 py-2 text-sm leading-5 text-body file:mr-3 file:cursor-pointer file:rounded-app file:border-0 file:bg-hairline-soft file:px-2 file:py-1 file:text-sm file:leading-4 file:font-medium file:text-ink"
+		/>
+	</div>
+
+	<div class="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
+		<LanguageSelect id="tts-language" name="language" value="auto" label="Language" />
+		<VoiceSelect id="tts-voice" name="voice" value="Kore" label="Voice" />
+	</div>
+
+	<!-- 5.2 — the estimate. Every figure is labelled "estimated" because
+	     CHARS_PER_SECOND is still an uncalibrated constant; the server
+	     returns `calibrated: false` and this is why that field exists. -->
+	<div
+		id="tts-estimate"
+		class="mt-6 hidden rounded-app border border-hairline bg-hairline-soft p-4"
+		aria-live="polite"
+	>
+		<div class="grid grid-cols-2 gap-4 sm:grid-cols-4">
+			<div class="flex flex-col gap-1">
+				<span class="font-mono text-xs leading-4 tracking-normal text-mute uppercase">Duration</span>
+				<span id="tts-est-seconds" class="text-xl leading-7 font-semibold tracking-normal text-ink">—</span>
+			</div>
+			<div class="flex flex-col gap-1">
+				<span class="font-mono text-xs leading-4 tracking-normal text-mute uppercase">Chunks</span>
+				<span id="tts-est-chunks" class="text-xl leading-7 font-semibold tracking-normal text-ink">—</span>
+			</div>
+			<div class="flex flex-col gap-1">
+				<span class="font-mono text-xs leading-4 tracking-normal text-mute uppercase">Characters</span>
+				<span id="tts-est-chars" class="text-xl leading-7 font-semibold tracking-normal text-ink">—</span>
+			</div>
+			<div class="flex flex-col gap-1">
+				<span class="font-mono text-xs leading-4 tracking-normal text-mute uppercase">Est. cost</span>
+				<span id="tts-est-cost" class="text-xl leading-7 font-semibold tracking-normal text-ink">—</span>
+			</div>
+		</div>
+		<p id="tts-est-note" class="mt-3 text-xs leading-4 text-mute"></p>
+	</div>
+
+	<!-- 5.3 — progress. The plan asks for "3 / 24 chunks". The server
+	     assembles the whole WAV before responding, so a per-chunk counter
+	     would be a fiction: the client cannot know a chunk finished. What is
+	     observable is bytes received, so that is what is shown, labelled by
+	     what it actually measures. -->
+	<div id="tts-progress" class="mt-6 hidden" aria-live="polite">
+		<div class="flex items-baseline justify-between gap-4">
+			<p id="tts-progress-label" class="text-sm leading-5 text-body">Generating…</p>
+			<p id="tts-progress-detail" class="font-mono text-xs leading-4 tracking-normal text-mute"></p>
+		</div>
+		<div
+			class="mt-2 h-1 w-full overflow-hidden rounded-full bg-hairline"
+			role="progressbar"
+			aria-labelledby="tts-progress-label"
+			aria-valuemin="0"
+			aria-valuemax="100"
+		>
+			<div id="tts-progress-bar" class="h-full w-0 rounded-full bg-ink"></div>
+		</div>
+		<button
+			id="tts-cancel"
+			type="button"
+			class="mt-3 cursor-pointer rounded-app border border-hairline bg-elevated px-2 py-1 text-sm leading-5 font-medium text-ink"
+		>
+			Cancel
+		</button>
+	</div>
+
+	<!-- Distinct inline alert for each failure mode, per the plan: empty
+	     input, extraction failure, synthesis failure. Never a silent no-op.
+	     `role="alert"` so it is announced rather than merely drawn. -->
+	<div
+		id="tts-alert"
+		class="mt-6 hidden rounded-app border border-hairline bg-elevated p-4"
+		role="alert"
+	>
+		<p id="tts-alert-title" class="text-sm leading-5 font-medium text-ink"></p>
+		<p id="tts-alert-body" class="mt-1 text-sm leading-5 text-body"></p>
+		<button
+			id="tts-alert-retry"
+			type="button"
+			class="mt-3 hidden cursor-pointer rounded-app border border-hairline bg-elevated px-2 py-1 text-sm leading-5 font-medium text-ink"
+		>
+			Try again
+		</button>
+	</div>
+
+	<!-- The cost gate. `button-primary`: ink fill, white label, rounded.pill,
+	     padding 0 14px. Disabled until an estimate exists for this exact text. -->
+	<div class="mt-6 flex flex-wrap items-center gap-4">
+		<button
+			id="tts-confirm"
+			type="button"
+			class="cursor-pointer rounded-pill bg-ink px-3.5 py-1 text-base leading-5 font-medium text-on-primary disabled:cursor-not-allowed disabled:opacity-40"
+			disabled
+		>
+			Generate speech
+		</button>
+		<p id="tts-gate-note" class="text-xs leading-4 text-mute">
+			An estimate must load before generating — it is what shows what this will cost.
+		</p>
+	</div>
+
+	<div id="tts-result-slot"></div>
+</section>
+
+<AudioResult />
+
+<script>
+	// Phase 5 behaviour. Plain DOM, no framework, no state library.
+	//
+	// The single source of truth for "what will be sent" is the textarea. The
+	// estimate and the generate step both read it directly, so a value shown
+	// in the estimate can never be a stale copy of text the user has since
+	// replaced.
+
+	interface Estimate {
+		characters: number;
+		seconds: number;
+		chunks: number;
+		estimatedCostUsd: number;
+		calibrated: boolean;
+	}
+
+	const DEBOUNCE_MS = 300;
+
+	const textarea = document.getElementById('tts-text') as HTMLTextAreaElement;
+	const fileInput = document.getElementById('tts-file') as HTMLInputElement;
+	const languageSelect = document.getElementById('tts-language') as HTMLSelectElement;
+	const voiceSelect = document.getElementById('tts-voice') as HTMLSelectElement;
+	const confirmButton = document.getElementById('tts-confirm') as HTMLButtonElement;
+	const gateNote = document.getElementById('tts-gate-note') as HTMLParagraphElement;
+
+	const estimateBox = document.getElementById('tts-estimate') as HTMLDivElement;
+	const estSeconds = document.getElementById('tts-est-seconds') as HTMLSpanElement;
+	const estChunks = document.getElementById('tts-est-chunks') as HTMLSpanElement;
+	const estChars = document.getElementById('tts-est-chars') as HTMLSpanElement;
+	const estCost = document.getElementById('tts-est-cost') as HTMLSpanElement;
+	const estNote = document.getElementById('tts-est-note') as HTMLParagraphElement;
+
+	const progressBox = document.getElementById('tts-progress') as HTMLDivElement;
+	const progressLabel = document.getElementById('tts-progress-label') as HTMLParagraphElement;
+	const progressDetail = document.getElementById('tts-progress-detail') as HTMLParagraphElement;
+	const progressBar = document.getElementById('tts-progress-bar') as HTMLDivElement;
+	const progressTrack = progressBar.parentElement as HTMLDivElement;
+	const cancelButton = document.getElementById('tts-cancel') as HTMLButtonElement;
+
+	const alertBox = document.getElementById('tts-alert') as HTMLDivElement;
+	const alertTitle = document.getElementById('tts-alert-title') as HTMLParagraphElement;
+	const alertBody = document.getElementById('tts-alert-body') as HTMLParagraphElement;
+	const alertRetry = document.getElementById('tts-alert-retry') as HTMLButtonElement;
+
+	const resultSlot = document.getElementById('tts-result-slot') as HTMLDivElement;
+	// Authored in AudioResult.astro so the markup lives with the design
+	// tokens it uses; cloned here and filled from the response. data-role
+	// keeps the script from depending on class names, which are free to
+	// change when the design system moves.
+	const resultTemplate = document.getElementById('tts-audio-result') as HTMLTemplateElement;
+
+	/** Aborts in-flight estimate and synthesis requests. */
+	let activeController: AbortController | null = null;
+	let debounceTimer: number | undefined;
+	/** The exact text the visible estimate describes. Null until one lands. */
+	let estimatedFor: string | null = null;
+	let retryAction: (() => void) | null = null;
+	/** Revoked on replace/unload so a long session does not leak blobs. */
+	let currentAudioUrl: string | null = null;
+
+	function show(node: HTMLElement, visible: boolean): void {
+		node.classList.toggle('hidden', !visible);
+	}
+
+	function clearAlert(): void {
+		show(alertBox, false);
+		alertRetry.classList.add('hidden');
+		retryAction = null;
+	}
+
+	function showAlert(title: string, body: string, retry: (() => void) | null): void {
+		alertTitle.textContent = title;
+		alertBody.textContent = body;
+		retryAction = retry;
+		show(alertBox, true);
+		if (retry) {
+			alertRetry.textContent = 'Try again';
+			alertRetry.classList.remove('hidden');
+		} else {
+			alertRetry.classList.add('hidden');
+		}
+	}
+
+	/** "0:42" for short clips, "1:02:03" once an hour is reached. */
+	function formatDuration(seconds: number): string {
+		const total = Math.max(0, Math.round(seconds));
+		const h = Math.floor(total / 3600);
+		const m = Math.floor((total % 3600) / 60);
+		const s = total % 60;
+		const pad = (n: number) => n.toString().padStart(2, '0');
+		return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
+	}
+
+	/**
+	 * Cost needs more precision than money. A $0.0042 job is not free, and
+	 * rounding it to $0.00 would hide exactly the small-but-real spend the
+	 * confirm gate exists to surface. So sub-cent figures show 4 decimals.
+	 */
+	function formatCost(usd: number): string {
+		return usd >= 0.01 ? `$${usd.toFixed(2)}` : `$${usd.toFixed(4)}`;
+	}
+
+	function formatBytes(bytes: number): string {
+		if (bytes < 1024) return `${bytes} B`;
+		if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+		return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+	}
+
+	function describeError(payload: unknown, fallback: string): string {
+		if (typeof payload === 'object' && payload !== null) {
+			const record = payload as Record<string, unknown>;
+			if (typeof record.error === 'string' && record.error.length > 0) return record.error;
+		}
+		return fallback;
+	}
+
+	// --- 5.2 estimate -----------------------------------------------------
+
+	/**
+	 * The cost gate. Confirm is enabled only when an estimate exists for the
+	 * text that is *right now* in the box, and only for text long enough to be
+	 * worth speaking. Comparing the exact string is what stops a user from
+	 * estimating 200 characters and generating 200 000 — the failure the
+	 * whole gate is designed to make impossible.
+	 *
+	 * Every path that changes `estimatedFor` calls this, so the button and the
+	 * note can never disagree with each other.
+	 */
+	function updateGate(): void {
+		const text = textarea.value.trim();
+		const valid = estimatedFor !== null && estimatedFor === text && text.length > 0;
+		confirmButton.disabled = !valid;
+		gateNote.textContent = valid
+			? `Estimate covers this text: ${estimatedFor!.length.toLocaleString()} characters.`
+			: 'An estimate must load before generating — it is what shows what this will cost.';
+	}
+
+	function resetEstimate(): void {
+		estimatedFor = null;
+		estSeconds.textContent = '—';
+		estChunks.textContent = '—';
+		estChars.textContent = '—';
+		estCost.textContent = '—';
+		estNote.textContent = '';
+		show(estimateBox, false);
+		updateGate();
+	}
+
+	async function runEstimate(text: string): Promise<void> {
+		// §5.7: "Empty textarea → estimate not called." Not merely ignored —
+		// never dispatched.
+		if (text.length === 0) {
+			resetEstimate();
+			return;
+		}
+
+		activeController?.abort();
+		const controller = new AbortController();
+		activeController = controller;
+
+		try {
+			const response = await fetch('/api/estimate', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ text }),
+				signal: controller.signal,
+			});
+			if (controller.signal.aborted) return;
+
+			if (!response.ok) {
+				resetEstimate();
+				const payload = await response.json().catch(() => null);
+				showAlert(
+					'The estimate could not be calculated.',
+					describeError(payload, 'Please try again.'),
+					() => void runEstimate(text),
+				);
+				return;
+			}
+
+			const estimate = (await response.json()) as Estimate;
+			// A response for text the user has already replaced is discarded
+			// rather than rendered, so the panel never shows a price for
+			// something other than what is on screen.
+			if (textarea.value.trim() !== text) return;
+
+			estimatedFor = text;
+			estSeconds.textContent = formatDuration(estimate.seconds);
+			estChunks.textContent = estimate.chunks.toLocaleString();
+			estChars.textContent = estimate.characters.toLocaleString();
+			estCost.textContent = formatCost(estimate.estimatedCostUsd);
+			estNote.textContent = estimate.calibrated
+				? 'Duration and cost are calibrated against a measured generation.'
+				: 'Estimated. The speaking-rate constant is not yet calibrated against a real generation, so treat this as an order of magnitude.';
+			show(estimateBox, true);
+			clearAlert();
+			// The gate is re-evaluated here, not on the next input event. Without
+			// this the estimate paints and Confirm stays disabled until the user
+			// types again — the cost gate silently blocking a correctly-priced
+			// request, which is the worst possible failure for this control.
+			updateGate();
+		} catch (error) {
+			if (error instanceof DOMException && error.name === 'AbortError') return;
+			resetEstimate();
+			showAlert(
+				'The estimate could not be calculated.',
+				'The request did not complete. Check your connection and try again.',
+				() => void runEstimate(text),
+			);
+		} finally {
+			if (activeController === controller) activeController = null;
+		}
+	}
+
+	function scheduleEstimate(): void {
+		// A failure from the previous document must not survive into the next
+		// one. Left in place, "scan.pdf could not be read" sits above a box the
+		// user has since filled with working text, describing a document that
+		// is no longer involved.
+		if (!alertBox.classList.contains('hidden')) clearAlert();
+		resetEstimate();
+		window.clearTimeout(debounceTimer);
+		debounceTimer = window.setTimeout(() => void runEstimate(textarea.value.trim()), DEBOUNCE_MS);
+	}
+
+	textarea.addEventListener('input', scheduleEstimate);
+
+	// --- 5.1 file upload --------------------------------------------------
+
+	/**
+	 * Base64 is walked chunk-by-chunk. `String.fromCharCode(...bytes)` on a
+	 * multi-megabyte PDF overflows the argument limit and throws — the naive
+	 * one-liner works on the small files people try by hand and fails on the
+	 * real ones.
+	 */
+	async function fileToBase64(file: File): Promise<string> {
+		const buffer = new Uint8Array(await file.arrayBuffer());
+		const CHUNK = 0x8000;
+		let binary = '';
+		for (let i = 0; i < buffer.length; i += CHUNK) {
+			binary += String.fromCharCode(...buffer.subarray(i, i + CHUNK));
+		}
+		return btoa(binary);
+	}
+
+	fileInput.addEventListener('change', async () => {
+		const file = fileInput.files?.[0];
+		if (!file) return;
+
+		clearAlert();
+		show(progressBox, true);
+		progressLabel.textContent = `Reading ${file.name}…`;
+		progressDetail.textContent = formatBytes(file.size);
+		progressBar.style.width = '0%';
+		progressTrack.setAttribute('aria-valuenow', '0');
+
+		try {
+			progressLabel.textContent = `Extracting text from ${file.name}…`;
+			const data = await fileToBase64(file);
+			const response = await fetch('/api/extract', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ name: file.name, data }),
+			});
+			const payload = (await response.json().catch(() => null)) as Record<string, unknown> | null;
+
+			if (!response.ok) {
+				// The server's own wording is rendered verbatim — a scanned
+				// .pdf says so, in the words the parser used, not "error".
+				showAlert(
+					`${file.name} could not be read.`,
+					describeError(payload, 'This file could not be read.'),
+					() => fileInput.click(),
+				);
+				return;
+			}
+
+			const text = typeof payload?.text === 'string' ? payload.text : '';
+			if (text.trim().length === 0) {
+				showAlert(
+					`${file.name} contains no readable text.`,
+					'The file parsed successfully but held no text to speak. It may be an image or an empty document.',
+					() => fileInput.click(),
+				);
+				return;
+			}
+
+			textarea.value = text;
+			scheduleEstimate();
+		} catch {
+			showAlert(
+				`${file.name} could not be uploaded.`,
+				'The file could not be read by the browser or sent to the server. Check the file and try again.',
+				() => fileInput.click(),
+			);
+		} finally {
+			show(progressBox, false);
+			// Cleared so re-picking the same file fires `change` again; without
+			// this, choosing a file twice in a row silently does nothing.
+			fileInput.value = '';
+		}
+	});
+
+	// --- 5.3 synthesis ----------------------------------------------------
+
+	function clearResult(): void {
+		if (currentAudioUrl) {
+			URL.revokeObjectURL(currentAudioUrl);
+			currentAudioUrl = null;
+		}
+		resultSlot.replaceChildren();
+	}
+
+	function renderResult(blob: Blob, durationSeconds: number | null): void {
+		clearResult();
+		const url = URL.createObjectURL(blob);
+		currentAudioUrl = url;
+
+		const node = resultTemplate.content.firstElementChild!.cloneNode(true) as HTMLElement;
+		const audio = node.querySelector('[data-role="audio"]') as HTMLAudioElement;
+		const facts = node.querySelector('[data-role="facts"]') as HTMLParagraphElement;
+		const download = node.querySelector('[data-role="download"]') as HTMLAnchorElement;
+
+		audio.src = url;
+		// `download` on a blob: URL is the only way to name the file — the
+		// server's content-disposition header is ignored for blob URLs.
+		download.href = url;
+		facts.textContent =
+			`${formatBytes(blob.size)} WAV` +
+			(durationSeconds === null ? '' : ` · ${formatDuration(durationSeconds)}`);
+
+		resultSlot.append(node);
+	}
+
+	async function generate(): Promise<void> {
+		const text = textarea.value.trim();
+		// Re-checked at click time, not trusted from the button's disabled
+		// state. Between disabling and clicking, the text may have changed.
+		if (text.length === 0 || text !== estimatedFor) {
+			showAlert(
+				'Nothing to generate.',
+				text.length === 0
+					? 'Paste or upload some text first.'
+					: 'The text changed since the last estimate. Wait for the updated estimate, then confirm again.',
+				null,
+			);
+			return;
+		}
+
+		clearAlert();
+		clearResult();
+		show(progressBox, true);
+		progressLabel.textContent = 'Generating speech…';
+		progressBar.style.width = '0%';
+		progressTrack.setAttribute('aria-valuemax', '100');
+		progressTrack.setAttribute('aria-valuenow', '0');
+		progressDetail.textContent = '';
+		confirmButton.disabled = true;
+
+		activeController?.abort();
+		const controller = new AbortController();
+		activeController = controller;
+
+		try {
+			const response = await fetch('/api/synthesize', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({
+					text,
+					voice: voiceSelect.value,
+					language: languageSelect.value,
+				}),
+				signal: controller.signal,
+			});
+
+			if (!response.ok) {
+				const payload = await response.json().catch(() => null);
+				showAlert(
+					'The speech could not be generated.',
+					describeError(payload, 'The request failed before any audio was produced.'),
+					() => void generate(),
+				);
+				return;
+			}
+
+			// The WAV is assembled server-side before the first byte is sent,
+			// so bytes-arrived is the only real progress signal available. It
+			// is labelled as what it is rather than dressed up as a chunk
+			// counter, which would be a number the client cannot know.
+			const declared = Number(response.headers.get('content-length') ?? '0');
+			const chunks = response.headers.get('x-chunks');
+			const duration = Number(response.headers.get('x-duration-seconds') ?? '0');
+
+			if (!response.body || !Number.isFinite(declared) || declared <= 0) {
+				const blob = await response.blob();
+				renderResult(blob, Number.isFinite(duration) && duration > 0 ? duration : null);
+				return;
+			}
+
+			// Chunks are collected, not written into one preallocated buffer. A
+			// preallocated array needs a grow path for a stream that overruns
+			// its declared length, and a bug in that path truncates the audio
+			// silently — the single worst failure this code could have.
+			const reader = response.body.getReader();
+			const parts: Uint8Array[] = [];
+			let offset = 0;
+
+			for (;;) {
+				const { done, value } = await reader.read();
+				if (done) break;
+				parts.push(value);
+				offset += value.length;
+
+				const percent = Math.min(100, Math.round((offset / declared) * 100));
+				progressBar.style.width = `${percent}%`;
+				progressTrack.setAttribute('aria-valuenow', String(percent));
+				progressDetail.textContent = `${formatBytes(offset)} of ${formatBytes(declared)}${
+					chunks ? ` · ${chunks} chunks` : ''
+				}`;
+			}
+
+			progressBar.style.width = '100%';
+			progressTrack.setAttribute('aria-valuenow', '100');
+			renderResult(
+				new Blob(parts as BlobPart[], { type: 'audio/wav' }),
+				Number.isFinite(duration) && duration > 0 ? duration : null,
+			);
+		} catch (error) {
+			if (!(error instanceof DOMException && error.name === 'AbortError')) {
+				showAlert(
+					'The speech could not be generated.',
+					'The request did not complete. Nothing was charged.',
+					() => void generate(),
+				);
+			} else {
+				// An abort is the Cancel button, not a failure. progressBox is
+				// hidden by the `finally` either way, so this state is only
+				// visible if the user cancels and immediately reopens the
+				// panel — it reads as cancelled, never as broken.
+				progressLabel.textContent = 'Cancelled. Nothing was charged.';
+			}
+		} finally {
+			if (activeController === controller) activeController = null;
+			show(progressBox, false);
+			updateGate();
+		}
+	}
+
+	confirmButton.addEventListener('click', () => void generate());
+
+	cancelButton.addEventListener('click', () => {
+		// Aborting propagates to the server through request.signal, which
+		// `synthesize()` already threads into its per-chunk calls.
+		activeController?.abort();
+		progressLabel.textContent = 'Cancelling…';
+	});
+
+	alertRetry.addEventListener('click', () => retryAction?.());
+
+	// Revoking on unload stops a long-lived tab holding the whole WAV in
+	// memory. revoking on replace happens in clearResult().
+	window.addEventListener('pagehide', clearResult);
+
+	updateGate();
+</script>
