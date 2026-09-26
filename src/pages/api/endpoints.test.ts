@@ -210,9 +210,27 @@ describe('POST /api/estimate', () => {
     expect(body.estimatedCostUsd).toBeGreaterThan(0);
   });
 
-  test('reports calibrated: false, forcing the UI to label the figure estimated', async () => {
-    const body = (await (await call(estimate, { text: 'Hello.' })).json()) as { calibrated: boolean };
-    expect(body.calibrated).toBe(false);
+  test('reports calibrated: true, and the rate and script it used', async () => {
+    const body = (await (await call(estimate, { text: 'Hello.' })).json()) as {
+      calibrated: boolean;
+      charsPerSecond: number;
+      script: string;
+    };
+    expect(body.calibrated).toBe(true);
+    expect(body.charsPerSecond).toBeGreaterThan(0);
+    expect(body.script).toBe('en');
+  });
+
+  test('applies the slower Bengali rate to Bengali text', async () => {
+    const latin = (await (await call(estimate, { text: 'Hello world.' })).json()) as {
+      seconds: number;
+      charsPerSecond: number;
+    };
+    const bengali = (await (await call(estimate, { text: 'হ্যালো বিশ্ব।' })).json()) as {
+      seconds: number;
+      charsPerSecond: number;
+    };
+    expect(bengali.charsPerSecond).toBeLessThan(latin.charsPerSecond);
   });
 
   test('rejects empty text', async () => {

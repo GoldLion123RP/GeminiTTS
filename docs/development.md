@@ -12,6 +12,8 @@ Detail behind [`AGENTS.md`](../AGENTS.md). Read on demand.
 | `bun test` | Run unit tests (no separate test framework) |
 | `bun run dev` | Dev server with HMR at `http://localhost:4321` |
 | `bun run build` | Production build into `./dist/` |
+| `bun run start` | Run the built server, loading `.env` via Node's `--env-file-if-exists` |
+| `bun run smoke` | Start the built server and check the page, both panels, and key visibility |
 | `bun run preview` | Serve the production build locally |
 | `bun run check` | Type check — `astro check`, must report zero errors |
 | `bunx astro --help` | Astro CLI reference |
@@ -19,6 +21,9 @@ Detail behind [`AGENTS.md`](../AGENTS.md). Read on demand.
 
 `bun run build` and `bun run check` are the two gates. Run both before opening a
 pull request. There is no CI enforcing them yet.
+
+`bun run start` exists because `node dist/server/entry.mjs` **does not load
+`.env`** — see [The standalone server does not load `.env`](#the-standalone-server-does-not-load-env).
 
 ## Project structure
 
@@ -78,6 +83,53 @@ appear anywhere under `dist/client/`:
 ```powershell
 Select-String -Path "dist\client\**" -Pattern "generativelanguage" -SimpleMatch -List
 ```
+
+## The standalone server does not load `.env` ⚠️
+
+**`node dist/server/entry.mjs` cannot see `.env`.** Astro populates
+`process.env` in `astro dev` and `astro build` — and nowhere else. The
+standalone bundle ships no dotenv loader, and `getSecret()` compiles down to
+exactly this:
+
+```js
+// dist/server/chunks/runtime_*.mjs
+var _getEnv = (key) => process.env[key];
+```
+
+So a `.env` sitting next to `dist/` is simply not read.
+
+### Why this is worth a whole section
+
+The failure is **indistinguishable from a missing or malformed key**. The server
+answers `500` with *"GEMINI_API_KEY is not set. Copy .env.example to .env and
+fill in your key…"* — which is true, and points straight at the one thing that
+is not broken. The natural next step is to go inspect the key. Phase 6 burned
+time exactly this way, and the message is doing its job too well: it is a
+correct error message about a condition it cannot see the cause of.
+
+### Use the right command
+
+| Command | Loads `.env`? | Use for |
+| :--- | :--- | :--- |
+| `bun run dev` | yes | Day-to-day development. **The default choice.** |
+| `bun run start` | yes (`--env-file-if-exists=.env`) | Running the built output. |
+| `node dist/server/entry.mjs` | **no** | Only when the variables are already in the shell. |
+
+`--env-file-if-exists` is a **built-in Node flag** (Node ≥ 20.6), so `start`
+needs no dotenv dependency. The `-if-exists` variant is deliberate: a machine
+with no `.env` still starts and fails at request time, rather than refusing to
+boot.
+
+### Check before you debug
+
+```powershell
+bun run build
+bun run smoke
+```
+
+`scripts/smoke.mjs` starts the built server with the env file loaded, then
+reports the page, both panels, and whether the server can see a key. It prints
+**no key material** — only booleans and the server's own error text.
 
 ## Environment quirk: `bun install` fails on `E:`
 

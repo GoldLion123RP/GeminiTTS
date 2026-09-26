@@ -69,8 +69,12 @@ runtime error, not a build error.
 
 ```bash
 bun install     # install dependencies
-bun run dev     # dev server with HMR at http://localhost:4321
+bun run dev     # dev server with HMR at http://localhost:4321 — loads .env
 ```
+
+`.env` must exist before `bun run dev`; without it every Gemini call fails with
+a 500 that names the missing key. `bun run smoke` will tell you in one line
+whether the built server can see it.
 
 ## Commands
 
@@ -81,12 +85,22 @@ bun run dev     # dev server with HMR at http://localhost:4321
 | `bun run build` | Production build into `./dist/` (`client/` + `server/`) |
 | `bun run preview` | Serve the production build locally |
 | `bun run check` | Type check — `astro check`, must report zero errors |
-| `node ./dist/server/entry.mjs` | Run the standalone production server directly |
+| `bun run start` | Run the built server, **loading `.env`** (see the warning below) |
+| `bun run smoke` | Start the built server and check the page, both panels, and key visibility |
 | `bun test` | Unit tests (`bun test` is built in — no test framework dependency) |
 | `bunx astro --help` | Astro CLI reference |
 
 `bun run check` and `bun run build` are the two gates. Run both before opening a
 pull request; neither is enforced in CI yet because there is no CI.
+
+> [!WARNING]
+> **Do not run `node ./dist/server/entry.mjs` directly.** The standalone server
+> does **not** load `.env` — `getSecret()` reads `process.env`, and nothing
+> populates it in the built output. You will get
+> *"GEMINI_API_KEY is not set"* and it will look like your key is broken when it
+> is not. Use `bun run start` (adds Node's `--env-file-if-exists=.env`) or
+> `bun run dev`. Full explanation in
+> [`docs/development.md`](docs/development.md#the-standalone-server-does-not-load-env).
 
 > [!NOTE]
 > `bun test` is the third gate. It covers the pure modules in `src/lib` — the

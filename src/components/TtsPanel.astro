@@ -87,9 +87,9 @@ const ACCEPT = '.txt,.md,.pdf,.docx';
 		<VoiceSelect id="tts-voice" name="voice" value="Kore" label="Voice" />
 	</div>
 
-	<!-- 5.2 — the estimate. Every figure is labelled "estimated" because
-	     CHARS_PER_SECOND is still an uncalibrated constant; the server
-	     returns `calibrated: false` and this is why that field exists. -->
+	<!-- 5.2 — the estimate. The speaking rates behind these figures were
+	     measured against real generations on 2026-09-26, per script; the
+	     `calibrated` field reports whether that is still true. -->
 	<div
 		id="tts-estimate"
 		class="mt-6 hidden rounded-app border border-hairline bg-hairline-soft p-4"
@@ -197,6 +197,8 @@ const ACCEPT = '.txt,.md,.pdf,.docx';
 		seconds: number;
 		chunks: number;
 		estimatedCostUsd: number;
+		charsPerSecond: number;
+		script: string;
 		calibrated: boolean;
 	}
 
@@ -376,8 +378,10 @@ const ACCEPT = '.txt,.md,.pdf,.docx';
 			estChars.textContent = estimate.characters.toLocaleString();
 			estCost.textContent = formatCost(estimate.estimatedCostUsd);
 			estNote.textContent = estimate.calibrated
-				? 'Duration and cost are calibrated against a measured generation.'
-				: 'Estimated. The speaking-rate constant is not yet calibrated against a real generation, so treat this as an order of magnitude.';
+				? `Estimated from measured speaking rates (${estimate.charsPerSecond} characters per second for ${
+						estimate.script === 'en' ? 'Latin text' : `${estimate.script === 'bn' ? 'Bengali' : 'Devanagari'} text`
+					}). Actual length varies with the voice chosen.`
+				: 'Estimated. The speaking rates are no longer calibrated against a real generation, so treat this as an order of magnitude.';
 			show(estimateBox, true);
 			clearAlert();
 			// The gate is re-evaluated here, not on the next input event. Without
