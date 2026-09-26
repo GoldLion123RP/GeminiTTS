@@ -71,6 +71,9 @@ function writeHarness(dir) {
 	writeFileSync(
 		path,
 		`
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 const BUNDLE = process.env.BUNDLE_PATH;
 const PRELOAD = process.env.PRELOAD === '1';
 const TEXT = 'আমাদের গ্লাসের বাড়িতে ছোট মামার বিশেষ সিদ্ধান্ত নিয়েছিলাম।';
@@ -104,7 +107,13 @@ class El {
 }
 
 const registry = new Map();
+// documentElement exists in every browser and carries the readiness flag the
+// panel sets and the watchdog reads. A stub without it turns a real browser
+// guarantee into a TypeError — and that is how this harness caught the first
+// draft of the watchdog, which is the point of running the artifact at all.
+const documentElement = { dataset: {} };
 globalThis.document = {
+	documentElement,
 	getElementById(id) { if (!registry.has(id)) registry.set(id, new El(id)); return registry.get(id); },
 	querySelector: () => new El('q'),
 	querySelectorAll: () => [],
@@ -135,32 +144,66 @@ globalThis.URL.revokeObjectURL = () => {};
 if (PRELOAD) {
 	document.getElementById('tts-text').value = TEXT;
 }
-await import(BUNDLE);
+// NO_MODULE simulates the real failure: a cached HTML page referencing a chunk
+// the current deployment no longer has. The module never executes, so no
+// listener is attached — and that is the state the watchdog exists for.
+if (process.env.NO_MODULE !== '1') await import(BUNDLE);
 
-const textarea = registry.get('tts-text');
+// getElementById, not registry.get: in the NO_MODULE run nothing has touched
+// the registry yet, and the stub creates on demand.
+const textarea = document.getElementById('tts-text');
 if (!PRELOAD) {
 	textarea.value = TEXT;
 	for (const fn of textarea.listeners.input ?? []) fn();
 }
 await new Promise((r) => setTimeout(r, 600));
 
+// The watchdog is a CLASSIC inline script in the page, not part of the module,
+// so the harness has to run it the way a browser would: separately, with the
+// module's readiness flag unset — which is exactly the state a user is in when
+// the chunk 404s.
+let inline = null;
+try {
+	const html = readFileSync(join(process.env.PAGE_HTML, 'index.html'), 'utf8');
+	inline = [...html.matchAll(/<script>([\\s\\S]*?)<\\/script>/g)]
+		.map((m) => m[1])
+		.find((body) => body.includes('ttsPanel') && body.includes('setTimeout'));
+} catch {
+	// No prerendered page on disk: this is a NODE build, where the HTML is
+	// rendered on demand. The module assertions still run; the watchdog is
+	// asserted in CI, whose job builds the static target.
+}
+if (inline) {
+	// Running the page's own script IS the test: a stub of it would only prove
+	// the stub works.
+	const watchdog = new Function('document', 'window', 'URL', 'Date', inline);
+	watchdog(document, window, URL, Date);
+	await new Promise((r) => setTimeout(r, 3200));
+}
+
 console.log(JSON.stringify({
-	disabled: registry.get('tts-confirm').disabled,
-	cost: registry.get('tts-est-cost').textContent,
-	note: registry.get('tts-gate-note').textContent,
+	disabled: document.getElementById('tts-confirm').disabled,
+	cost: document.getElementById('tts-est-cost').textContent,
+	note: document.getElementById('tts-gate-note').textContent,
+	watchdogAlertShown: !document.getElementById('tts-alert').classList.contains('hidden'),
+	watchdogTitle: document.getElementById('tts-alert-title').textContent,
+	watchdogRetry: document.getElementById('tts-alert-retry').textContent,
+	watchdogTested: Boolean(inline),
 }));
 `,
 	);
 	return path;
 }
 
-function run(harness, chunkPath, preload) {
+function run(harness, chunkPath, preload, noModule = false) {
 	const result = spawnSync(process.execPath, [harness], {
 		cwd: ROOT,
 		encoding: 'utf8',
 		env: {
 			...process.env,
 			BUNDLE_PATH: pathToFileURL(chunkPath).href,
+			PAGE_HTML: join(ROOT, 'dist', 'client', 'text-to-speech'),
+			NO_MODULE: noModule ? '1' : '0',
 			PRELOAD: preload ? '1' : '0',
 		},
 	});
@@ -189,6 +232,35 @@ try {
 			if (typed.disabled) fail('Generate is still disabled after typing text.');
 			else if (typed.cost === '') fail('no cost was rendered after typing text.');
 			else pass(`typing opens the gate (cost ${typed.cost})`);
+			// The watchdog must STAY OUT OF THE WAY when the panel works. A
+			// watchdog that fires on a healthy page is worse than none: it would
+			// tell every user their page is broken.
+			if (typed.watchdogAlertShown && typed.watchdogTested) {
+				fail(`the watchdog raised an alert on a working page — it must only fire when the panel did not start. Title: ${typed.watchdogTitle}`);
+			} else {
+				pass('the watchdog stays silent on a working page');
+			}
+		}
+
+		// THE SILENT FAILURE. A cached page pointing at a chunk this deployment
+		// no longer has: the module 404s, nothing is attached, and the user sees
+		// a dead button and an unrelated note. The watchdog is the only thing on
+		// the page that can still speak, because it is a classic script.
+		const broken = run(harness, chunk, false, true);
+		if (broken && !broken.watchdogTested) {
+			console.log('skip  watchdog not testable on a node build (no prerendered page); CI builds the static target and asserts it');
+		} else if (broken) {
+			if (!broken.watchdogAlertShown) {
+				fail(
+					'the watchdog stayed silent when the panel module never loaded. The page would ' +
+						'again show a dead Generate button and "an estimate must load" with no ' +
+						'explanation — the silent failure this exists to prevent.',
+				);
+			} else if (!/reload/i.test(broken.watchdogTitle + broken.watchdogRetry)) {
+				fail(`the watchdog fired but offered no action. Title: ${broken.watchdogTitle} / ${broken.watchdogRetry}`);
+			} else {
+				pass(`a panel that fails to load is reported, with a reload (${broken.watchdogTitle})`);
+			}
 		}
 
 		// The regression: text present, no `input` event.

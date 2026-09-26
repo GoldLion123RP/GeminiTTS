@@ -251,6 +251,34 @@ FAIL  Generate is disabled when the textarea already has text on load. The panel
 It runs in `.github/workflows/pages.yml`, because a browser-only regression that
 ships once should not be able to ship twice on a machine nobody is watching.
 
+### The watchdog: a failure that used to be invisible
+
+A panel that fails to load now says so, and `check:panel` proves it does.
+
+Everything in the panel is a `type="module"` script, so it can fail in three
+ways that leave no trace: the chunk 404s, the import graph fails to resolve, or
+the module throws before it attaches a listener. In every one of those the page
+still renders, the CSS still loads, other panels still work, and the cost gate
+sits there permanently disabled reading "An estimate must load before
+generating" — an error with no error, reported as "it is not working" with
+nothing to go on. It is the reason this took three deploys to pin down.
+
+**The cause is mundane, and the symptom is misleading.** GitHub Pages sends
+`Cache-Control: max-age=600`, so a browser can hold HTML that references *last*
+deployment's hashed chunk. The next deploy removes that file, the module 404s,
+and the panel is dead until the HTML is refetched. Meanwhile the page's CSS hash
+has not changed, so everything looks fine, and any panel whose chunk did not
+change keeps working — which is exactly what was seen: BYOK saving worked, the
+TTS gate did not. A build hash cannot prevent that. Only detect it.
+
+So a **classic** inline script — not a module, because a module can be one of the
+things that failed — waits 2.5s for the module to set
+`document.documentElement.dataset.ttsPanel = 'ready'`, and if it never does, it
+replaces the misleading gate note with the real cause and a **Reload** button
+that cache-busts the URL. A watchdog that fires on a healthy page would be worse
+than none, so `check:panel` asserts both directions: it stays silent when the
+panel works, and it fires with an action when the module never loads.
+
 ### A green Pages run that published no pages
 
 `check:panel` rebuilds the project twice (once for the control, once to restore),

@@ -456,6 +456,10 @@ const ACCEPT = '.txt,.md,.pdf,.docx';
 	// The restore case above: this runs on every load, not only after an edit.
 	resyncEstimate();
 
+	// Tells the watchdog below that the module executed and attached. Set last,
+	// so a throw anywhere above leaves the watchdog armed.
+	document.documentElement.dataset.ttsPanel = 'ready';
+
 	// --- 5.1 file upload --------------------------------------------------
 
 	/**
@@ -684,4 +688,63 @@ const ACCEPT = '.txt,.md,.pdf,.docx';
 	window.addEventListener('pagehide', clearResult);
 
 	updateGate();
+</script>
+
+<!--
+	THE WATCHDOG. A panel that fails to load used to say nothing at all.
+
+	Everything above is a `type="module"` script, which means it can fail in
+	three ways that leave no trace in the page: the chunk 404s, the import
+	graph fails to resolve, or the module throws before it attaches a single
+	listener. In every one of those cases the page still renders, the CSS still
+	loads, other panels still work, and the cost gate sits there permanently
+	disabled reading "An estimate must load before generating" — an error with
+	no error, reported as "it is not working" with nothing to go on.
+
+	The commonest cause is mundane. GitHub Pages sends
+	`Cache-Control: max-age=600`, so a browser can hold HTML that references
+	*last* deployment's hashed chunk; the next deploy removes that file, the
+	module 404s, and the panel is dead until the HTML is refetched. A build
+	hash cannot prevent that — only detect it.
+
+	`is:inline` and no `type="module"` is the point: a classic script runs even
+	when every module on the page has failed, so this is the one thing on the
+	page that can still report the failure. It sets nothing itself; it only
+	checks the flag the module above sets on success.
+-->
+<script is:inline>
+	(function () {
+		var DELAY_MS = 2500;
+
+		window.setTimeout(function () {
+			if (document.documentElement.dataset.ttsPanel === 'ready') return;
+
+			var box = document.getElementById('tts-alert');
+			var title = document.getElementById('tts-alert-title');
+			var body = document.getElementById('tts-alert-body');
+			var retry = document.getElementById('tts-alert-retry');
+			var gate = document.getElementById('tts-gate-note');
+			if (!box || !title || !body) return;
+
+			title.textContent = 'This page needs a reload to work.';
+			body.textContent =
+				'The speech panel did not start, which almost always means this page was loaded from a cached copy that points at files from an older build. Reloading fetches the current page.';
+			if (retry) {
+				retry.textContent = 'Reload';
+				retry.classList.remove('hidden');
+				retry.onclick = function () {
+					// The cache-buster is the fix, not an incantation: it forces a
+					// refetch of the HTML, which carries the current chunk names.
+					var url = new URL(window.location.href);
+					url.searchParams.set('reload', String(Date.now()));
+					window.location.replace(url.href);
+				};
+			}
+			box.classList.remove('hidden');
+			// The gate note is the sentence that misled everyone, including the
+			// person filing the report. Leaving it up while the real cause is
+			// stated above it would be two explanations, one of them false.
+			if (gate) gate.textContent = 'The panel did not load, so there is no estimate to show.';
+		}, DELAY_MS);
+	})();
 </script>
