@@ -5,7 +5,15 @@ import { describe, expect, mock, test } from 'bun:test';
 // imports below — a `beforeAll` hook would run too late.
 mock.module('astro:env/server', () => ({ getSecret: () => 'test-key-never-real' }));
 
-const { BadRequest, failure, json, readJson, requireString } = await import('./api-response');
+const {
+  BadRequest,
+  DEFAULT_MAX_BODY_BYTES,
+  PayloadTooLarge,
+  failure,
+  json,
+  readJson,
+  requireString,
+} = await import('./api-response');
 const { ConfigError, GeminiError } = await import('./gemini/client');
 
 describe('json', () => {
@@ -81,6 +89,49 @@ describe('readJson', () => {
 
   test('rejects a JSON scalar', () => {
     expect(readJson(request('7'))).rejects.toBeInstanceOf(BadRequest);
+  });
+
+  test('accepts a body exactly at the cap', async () => {
+    // The boundary is the interesting case: an off-by-one that rejects a body
+    // at the limit would break the largest legitimate upload.
+    const filler = 'x'.repeat(1000);
+    const body = `{"a":"${filler}"}`;
+    const parsed = await readJson(request(body), { maxBytes: body.length });
+    expect(parsed.a).toBe(filler);
+  });
+
+  test('refuses a body over the cap with a 413, not a 400', async () => {
+    const body = `{"a":"${'x'.repeat(5000)}"}`;
+    const error = await readJson(request(body), { maxBytes: 1000 }).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(PayloadTooLarge);
+    // A client that retries a 400 unchanged loops forever; 413 is the status
+    // that tells it the body, not the request, is the problem.
+    expect(failure(error).status).toBe(413);
+  });
+
+  test('the cap is enforced from the stream, not from content-length', async () => {
+    // A client that omits or lies about `content-length` is exactly the case a
+    // limit exists for. Checking only the header would pass this body through.
+    const body = `{"a":"${'x'.repeat(5000)}"}`;
+    const stripped = new Request('http://localhost/api/x', { method: 'POST', body });
+    stripped.headers.delete('content-length');
+    expect(stripped.headers.get('content-length')).toBeNull();
+    expect(readJson(stripped, { maxBytes: 1000 })).rejects.toBeInstanceOf(PayloadTooLarge);
+  });
+
+  test('the default cap admits the largest legitimate upload', async () => {
+    // `/api/extract` accepts a 20 MB document, which arrives base64-inflated
+    // by 4/3. The cap is derived from that constant; if it drifts below the
+    // real payload, a legitimate document is refused by a limit that exists to
+    // refuse illegitimate ones.
+    const inflated = Math.ceil((20 * 1024 * 1024 * 4) / 3) + 1024;
+    expect(DEFAULT_MAX_BODY_BYTES).toBeGreaterThan(inflated);
+  });
+
+  test('a bodyless request is still a 400, not a crash', async () => {
+    expect(readJson(new Request('http://localhost/api/x', { method: 'POST' }))).rejects.toBeInstanceOf(
+      BadRequest,
+    );
   });
 });
 

@@ -181,6 +181,38 @@ browser.
 is what made a rejected key look like a missing one. It answers `200` for every
 state and costs no quota: it reads `models?pageSize=1`, never a generation.
 
+> [!CAUTION]
+> **`/api/health` is unauthenticated, and that is deliberate — it is also an
+> oracle.** Anyone can ask it whether a valid Gemini key is configured and
+> whether the project still has quota left. That is the information an operator
+> wants and an attacker wants equally. It is rate-limited like every other API
+> route, but a rate limit bounds how *fast* the answer comes, not *whether* it
+> does. If your deployment should not answer that question at all, put
+> `/api/health` behind your reverse proxy's auth or block the path there.
+
+---
+
+## Deploying this yourself
+
+> [!WARNING]
+> **There are no accounts, and every API route is open to anyone who can reach
+> it.** The rate limit in `src/lib/server/rate-limit.ts` bounds how fast one
+> caller can spend your Gemini quota — it is not authentication and cannot tell
+> callers apart. If you deploy this on a public URL with your own key in
+> `.env`, that key funds whoever finds the URL. Three things to do first:
+>
+> 1. Put the app behind a reverse proxy that terminates TLS and can block
+>    paths, and consider blocking `/api/*` for everyone but yourself.
+> 2. Raise or lower the limits to fit a shared host —
+>    `RATE_LIMIT_SYNTHESIZE=60`, `RATE_LIMIT_EXTRACT=6`. **`0` disables a
+>    limit**, which is occasionally what you want on a private network and never
+>    what you want on the open internet.
+> 3. Remember the limit is per process and in memory: a restart clears it, and
+>    N instances behind a load balancer get N times the limit.
+
+`bun run build && bun run start` is a working local deployment. There is no
+Dockerfile and no CI — neither was in scope.
+
 ---
 
 ## Design system
@@ -330,4 +362,4 @@ and the `bun install` workaround — is in
 
 ## License
 
-Unlicensed — all rights reserved.
+[Apache License 2.0](LICENSE) — see `LICENSE` for the full text.

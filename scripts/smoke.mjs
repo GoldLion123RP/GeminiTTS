@@ -205,6 +205,26 @@ try {
 		);
 		if (!noFlash) exitCode = 1;
 
+		// The rate limiter, asserted the only way it can be asserted without
+		// depending on a configured limit: the header is present on an API
+		// response, which means `src/middleware.ts` ran and counted the
+		// request.
+		//
+		// Deliberately NOT a burst of 31 requests. That would prove the limit
+		// fires, but it would also fail on any deployment that raised
+		// `RATE_LIMIT_HEALTH` or set it to 0 — a gate that breaks when the
+		// operator configures the thing it is testing. The unit tests in
+		// `src/lib/server/rate-limit.test.ts` cover the counting, the sliding
+		// window, and the refusal; this covers the wiring, which unit tests
+		// cannot see.
+		const limited = await fetch(`http://${HOST}:${PORT}/api/health`);
+		const remaining = limited.headers.get('x-ratelimit-remaining');
+		const limitedOk = remaining !== null;
+		console.log(
+			`${limitedOk ? '✓' : '✗'} rate limit    ${limitedOk ? `middleware applied (${limited.status}, x-ratelimit-remaining=${remaining})` : 'NO x-ratelimit-remaining header — src/middleware.ts is not applied to /api/'}`,
+		);
+		if (!limitedOk) exitCode = 1;
+
 		// A test file under src/pages/ used to ship as a live route. It is
 		// gone (see `scripts/check-routes.mjs`), and this is the end-to-end
 		// half of that check: the URL must not resolve to a page.

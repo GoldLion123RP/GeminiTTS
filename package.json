@@ -1,6 +1,7 @@
 {
   "name": "geminitts",
   "type": "module",
+  "license": "Apache-2.0",
   "version": "0.0.1",
   "engines": {
     "node": ">=22.12.0"

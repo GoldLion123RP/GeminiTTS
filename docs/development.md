@@ -243,6 +243,54 @@ answered.
 Costs two requests (one TTS to build the audio, one STT to transcribe) against a
 free tier with a daily ceiling.
 
+## Rate limiting and body limits on the API
+
+Every route under `/api/` is unauthenticated — the app has no accounts and this
+project does not invent them — so the protection is a per-IP rate limit in
+`src/middleware.ts` over `src/lib/server/rate-limit.ts`. Middleware rather than
+per-route calls, because this project has already shipped one route nobody meant
+to expose: a limit added inside each handler protects exactly the routes that
+existed when it was written, and a route added tomorrow is unprotected until
+someone remembers.
+
+| Route | Default | Why that number |
+| :--- | :--- | :--- |
+| `/api/synthesize`, `/api/transcribe` | 30 / min | one POST covers a whole script — chunking is server-side, so this is per *action*, not per chunk |
+| `/api/extract`, `/api/live-token` | 12 / min | CPU-bound (`unpdf`/`mammoth` over an attacker-chosen 20 MB file) and credential-minting respectively |
+| `/api/health` | 30 / min | cheap, but it is an information leak and is bounded like the rest |
+| `/api/estimate` | 120 / min | local computation |
+
+Override per route with `RATE_LIMIT_SYNTHESIZE=60`; **`0` disables** that
+route's limit. A non-numeric value is ignored rather than read as zero, so a
+typo cannot silently switch protection off.
+
+Three limits the code states about itself, all of them load-bearing:
+
+- **It is per process and in memory.** A restart clears every bucket, and N
+  instances behind a load balancer allow N times the limit. Fixing that needs a
+  shared store, which would be this project's first piece of persistent state.
+- **Behind a reverse proxy the client address is the proxy's**, so every visitor
+  shares one bucket. That fails closed — the limit still applies — which is why
+  `clientAddress` is read defensively in the middleware and falls back to a
+  single `unavailable` bucket. A forwarded header is client-controlled, so
+  trusting it would hand every caller a fresh bucket per request.
+- **A rejected request is not recorded.** Recording it would extend the window
+  for a client already being told to wait, turning a fixed wait into an
+  open-ended one for anyone who keeps asking.
+
+The window is **sliding, not fixed**: a fixed window allows the full limit at
+0:59 and again at 1:00, twice the ceiling in two seconds — the same
+burst-the-herd flaw the retry backoff avoids.
+
+`readJson` caps request bodies at 32 MB **while streaming**, not after
+buffering. `request.json()` reads the whole body first, so a check on the parsed
+value has already permitted the allocation it exists to prevent; `content-length`
+is used only as a cheap early exit, because a client that omits or lies about
+that header is exactly the case a limit is for. The cap is derived from
+`MAX_EXTRACT_BYTES` (20 MB, inflated 4/3 by base64) so it cannot drift below
+the largest legitimate upload — verified live: a 19 MB document still reaches
+the extractor, a 40 MB one gets `413`.
+
 ## Diagnosing a rejected or missing key
 
 ```
