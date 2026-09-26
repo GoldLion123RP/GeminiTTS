@@ -1,1 +1,237 @@
-@import 'tailwindcss';
+@import 'tailwindcss' source(none);
+
+/* Source detection is pinned to `src/` rather than left on automatic.
+   Automatic detection scans the whole project, and this repo holds a synced
+   Tailwind documentation snapshot under `.agents/skills/tailwind-4-docs/`
+   whose MDX samples contain literal class names — including
+   `bg-[url('/what_a_rush.png')]`. Tailwind picked those up, emitted the
+   utilities, and warned on every build that nine `/img/*` files "didn't
+   resolve at build time". Those warnings were blamed on the Astro starter's
+   Welcome.astro and outlived its deletion, which is the tell: the source was
+   never the project's own code.
+
+   Every .astro, .ts and .css file that can contain a class name lives under
+   `src/`. Re-add a `@source` line if that ever stops being true. */
+@source '../';
+
+
+/* ---------------------------------------------------------------------------
+   4.1 — Tailwind v4 token layer.
+
+   Every value below is a literal transcription of DESIGN.md. DESIGN.md is
+   frozen: adding a token here is a breaking change to the design system and
+   must be called out explicitly, not slipped in.
+
+   Three things are NOT repeated here because Tailwind's frozen v4 defaults
+   already equal the DESIGN.md values exactly, and re-declaring them would
+   create two sources of truth for one token:
+
+     - spacing  --spacing: 0.25rem.  p-1..p-32 are 4, 8, 12, 16, 24, 32, 40,
+                  64, 96, 128px — DESIGN.md's whole {spacing.*} ladder.
+     - type     text-xs 12/16, text-sm 14/20, text-xl 20/28, text-base 16/24
+                  — {typography.body-sm}, body-md, heading-md, body-lg.
+                  48px ({display-xl}) and 32px ({heading-lg}) have no v4
+                  default, so they are declared as tokens below.
+     - radii    rounded-full 9999px — {rounded.full}.
+                  {rounded.sm} 6px / {rounded.md} 12px / {rounded.lg} 16px /
+                  {rounded.pill} 100px are tokenised as app / card / panel /
+                  pill rather than overriding rounded-sm|md|lg|pill, because
+                  the v4 defaults under those names mean different numbers and
+                  a silent override would hide the collision.
+--------------------------------------------------------------------------- */
+
+@theme {
+  /* --- colors: DESIGN.md `colors:` (hex, verbatim) ------------------ */
+  --color-ink: #171717; /* colors.ink / colors.primary */
+  --color-on-primary: #ffffff; /* colors.on-primary */
+  --color-body: #4d4d4d;
+  --color-mute: #8f8f8f;
+  --color-faint: #a1a1a1;
+  --color-hairline: #ebebeb;
+  --color-hairline-soft: #f2f2f2;
+  --color-canvas: #fafafa;
+  --color-elevated: #ffffff; /* colors.canvas-elevated */
+  --color-link: #0070f3;
+  --color-link-deep: #0761d1;
+  --color-link-soft: #d3e5ff;
+  --color-error: #ee0000;
+  --color-error-deep: #c50000;
+  --color-warning: #f5a623;
+  --color-warning-soft: #ffefcf;
+  --color-warning-deep: #ab570a;
+  --color-violet: #7928ca;
+  --color-violet-soft: #d8ccf1;
+  --color-cyan: #50e3c2;
+  --color-cyan-soft: #aaffec;
+  --color-pink: #ff0080;
+  --color-magenta: #eb367f;
+
+  /* The three named two-stop gradients. Six stops, verbatim. 4.2's hero
+     mesh is built from exactly these — inventing a stop would be a new
+     colour. */
+  --color-gradient-develop-start: #007cf0;
+  --color-gradient-develop-end: #00dfd8;
+  --color-gradient-preview-start: #7928ca;
+  --color-gradient-preview-end: #ff0080;
+  --color-gradient-ship-start: #ff4d4d;
+  --color-gradient-ship-end: #f9cb28;
+
+  /* --- type: the two v4 gaps only ----------------------------------- */
+  --text-display-xl: 48px;
+  --text-display-xl--line-height: 48px; /* 1 */
+  --text-heading-lg: 32px;
+  --text-heading-lg--line-height: 40px;
+
+  /* --- radii: DESIGN.md `rounded:` ---------------------------------- */
+  --radius-app: 6px; /* rounded.sm — nav/app controls, inputs */
+  --radius-card: 12px; /* rounded.md — feature cards, code blocks */
+  --radius-panel: 16px; /* rounded.lg — pricing cards, large panels */
+  --radius-pill: 100px; /* rounded.pill — marketing CTA pills */
+
+  /* --- elevation: DESIGN.md "Level 1 — Whisper" -------------------- */
+  --shadow-whisper: 0px 1px 1px rgb(0 0 0 / 0.04);
+
+  /* --- motion: the recording pulse, keyframes inside @theme so
+         Tailwind emits them (theme.mdx, "Defining animation keyframes") */
+  --animate-recording: recording 1.6s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+
+  @keyframes recording {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.35;
+    }
+  }
+}
+
+/* Phase 0.3 left a note: Astro emits no @font-face for a family no stylesheet
+   references, so --font-geist / --font-geist-mono were downloaded and never
+   used. This is the binding. `inline` is required — it makes the utility
+   emit var(--font-geist) rather than var(--font-sans), which would resolve
+   against the wrong scope. The Arial / sans-serif and mono stacks come from
+   `fallbacks` in astro.config.mjs, so they are not repeated here.
+   Layout.astro also has to render <Font> for each cssVariable. */
+@theme inline {
+  --font-sans: var(--font-geist);
+  --font-mono: var(--font-geist-mono);
+}
+
+/* --- state, motion and script as custom variants ---------------------
+   :is(), not :where(). The plan's snippets use :where(), which contributes
+   ZERO specificity. That makes `recording:bg-ink` and `bg-elevated` the same
+   specificity, so which one wins is decided purely by the order Tailwind
+   happens to emit them in the utilities layer — a silent-breakage trap that
+   surfaces the first time someone reorders a class list. :is() takes the
+   specificity of its most specific argument (0,1,0 for an attribute or
+   :lang()), which puts every variant utility at 0,2,x and above the plain
+   utility it is meant to override. The selector semantics are identical.
+
+   `-- *` inside the selector also matches the element that carries the
+   attribute itself, not only its descendants. */
+
+/* True while recording. Owned by MicButton's data-recording attribute. */
+@custom-variant recording (&:is([data-recording='true'], [data-recording='true'] *));
+
+/* True while the Gemini Live socket is open. Phase 6 sets data-live. */
+@custom-variant live (&:is([data-live='connected'], [data-live='connected'] *));
+
+/* §2.4 Conflict A, ruled 2026-09-26: the frozen display tracking is a Latin
+   measurement. Bengali and Devanagari have no case, a different
+   ascender/descender rhythm, and headline bars (matra) that negative tracking
+   visibly collides with. Latin gets the design-system value; Indic keeps the
+   `tracking-normal` base that sits in the same class list. */
+@custom-variant latin (&:is(:lang(en), :lang(en) *));
+
+@layer base {
+  html {
+    background-color: var(--color-canvas);
+  }
+
+  body {
+    background-color: var(--color-canvas);
+    color: var(--color-body);
+    font-family: var(--font-sans);
+    font-size: var(--text-sm); /* {typography.body-md} 14/20 */
+    line-height: 20px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* DESIGN.md "Principles": weight is binary, and there is no italic. */
+  :where(h1, h2, h3) {
+    color: var(--color-ink);
+    font-weight: 600;
+    letter-spacing: normal; /* Indic-safe base; see the `latin` variant */
+  }
+
+  :where(a) {
+    color: var(--color-link);
+  }
+
+  /* DESIGN.md: "reserve {colors.link} for links and focus" */
+  :where(:focus-visible) {
+    outline: 2px solid var(--color-link);
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  /* DESIGN.md "Grid & Container": "Centered max-width container (~1200px)
+     with comfortable gutters". Lives here so the figure appears once. */
+  .container-page {
+    width: 100%;
+    max-width: 1200px;
+    margin-inline: auto;
+    padding-inline: 24px; /* {spacing.lg} */
+  }
+
+  /* 4.2 — the hero mesh gradient. DESIGN.md confines the mesh to the hero:
+     "it appears nowhere else", and "Don't add a second decorative system".
+     So it is defined once, here, and used by exactly one element. */
+  .hero-mesh {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background:
+      radial-gradient(
+        60% 55% at 12% 18%,
+        color-mix(in oklab, var(--color-gradient-develop-start) 55%, transparent) 0%,
+        transparent 70%
+      ),
+      radial-gradient(
+        55% 55% at 42% 8%,
+        var(--color-cyan) 0%,
+        transparent 65%
+      ),
+      radial-gradient(
+        65% 60% at 72% 30%,
+        var(--color-gradient-preview-start) 0%,
+        transparent 70%
+      ),
+      radial-gradient(
+        55% 55% at 95% 55%,
+        var(--color-pink) 0%,
+        transparent 65%
+      ),
+      radial-gradient(
+        60% 50% at 60% 95%,
+        var(--color-gradient-ship-end) 0%,
+        transparent 70%
+      );
+    filter: blur(48px); /* {blur.xl} */
+  }
+}
+
+/* The recording pulse is continuous motion, so it must yield to the user. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

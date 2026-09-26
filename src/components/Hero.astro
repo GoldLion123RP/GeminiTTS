@@ -1,0 +1,50 @@
+---
+// 4.2 — hero band. DESIGN.md `components.hero-band`:
+//
+//   background {colors.canvas} with the mesh gradient, ink text
+//   {colors.ink}, display type {typography.display-xl},
+//   padding {spacing.section} {spacing.lg}  →  128px 24px
+//
+// Two deliberate departures from {typography.display-xl}, both recorded in the
+// plan and both load-bearing:
+//
+//   1. Size. The plan sets the headline at text-6xl (60px) rather than the
+//      48px token. DESIGN.md calls the hero type "oversized" relative to its
+//      own scale but defines nothing larger, and a bare text-[48px] was
+//      rejected as a fake token. So: 36px on mobile ("hero type scales
+//      down"), the real {display-xl} 48px token at md, 60px from lg.
+//   2. Tracking. §2.4 Conflict A, ruled 2026-09-26: the frozen -2.4px is a
+//      Latin measurement. `tracking-normal` is the Indic-safe base and the
+//      `latin` variant restores the design-system value. -2.4px / 60px =
+//      -0.04em, and the same ratio holds at every step of the scale.
+
+interface Props {
+	eyebrow: string;
+	title: string;
+	lede: string;
+}
+
+const { eyebrow, title, lede } = Astro.props;
+---
+
+<section class="relative isolate overflow-hidden py-32">
+	{/* aria-hidden + z-index:-1: the mesh is decoration. DESIGN.md: "Confine
+	    color to the hero mesh gradient" — this element is the only one that
+	    ever gets .hero-mesh. */}
+	<div class="hero-mesh" aria-hidden="true"></div>
+
+	<div class="container-page relative">
+		<p class="font-mono text-xs leading-4 font-medium tracking-normal text-mute uppercase">
+			{eyebrow}
+		</p>
+		<h1
+			class="mt-6 max-w-4xl text-4xl leading-none font-semibold tracking-normal text-ink md:text-display-xl lg:text-6xl latin:tracking-[-0.04em]"
+		>
+			{title}
+		</h1>
+		<p class="mt-6 max-w-2xl text-base leading-6 text-body">
+			{lede}
+		</p>
+		<slot />
+	</div>
+</section>

@@ -1,0 +1,49 @@
+---
+// 4.3 — LanguageSelect. DESIGN.md `components.text-input`:
+//
+//   background {colors.canvas-elevated}, ink text {colors.ink},
+//   1px border {colors.hairline}, type {typography.body-md},
+//   rounded {rounded.sm} → --radius-app (6px), padding {spacing.xs} {spacing.sm}
+//
+// `rounded-app`, not `rounded-full` and not `rounded-pill`. This is an app
+// control: DESIGN.md "use the two button shapes by context … 6px square for
+// nav/app". The 6px square and the circular mic button are the plan's
+// "kept strictly separate" pair.
+//
+// The native <select> is deliberate. A custom listbox would need JS, focus
+// trapping, type-ahead and ARIA wiring, for zero gain over what the platform
+// already does correctly in all three target languages.
+
+import { LANGUAGES, type LanguageId } from '../lib/gemini/languages';
+
+interface Props {
+	id: string;
+	name: string;
+	value: LanguageId;
+	label: string;
+}
+
+const { id, name, value, label } = Astro.props;
+---
+
+<div class="flex flex-col gap-2">
+	<label class="font-mono text-xs leading-4 font-medium tracking-normal text-mute uppercase" for={id}>
+		{label}
+	</label>
+	<select
+		id={id}
+		name={name}
+		class="cursor-pointer rounded-app border border-hairline bg-elevated px-3 py-2 font-sans text-sm leading-5 text-ink"
+	>
+		{
+			LANGUAGES.map((language) => (
+				<option value={language.id} selected={language.id === value}>
+					{/* The native label carries the script, so screen readers and
+					    the closed control both show it. Bengali and Hindi
+					    options are written in their own script. */}
+					{language.label}
+				</option>
+			))
+		}
+	</select>
+</div>

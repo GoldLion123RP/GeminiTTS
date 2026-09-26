@@ -1,0 +1,44 @@
+---
+// 4.3 — MicButton. DESIGN.md `components.button-icon-circular`:
+//
+//   background {colors.canvas-elevated}, text {colors.ink},
+//   1px border {colors.hairline}, type {typography.body-lg},
+//   rounded {rounded.full}, padding 0px
+//
+// It inverts to an ink fill under `recording:` — the plan's one state change.
+// The pulse is `--animate-recording`, continuous motion, and therefore
+// killed by the prefers-reduced-motion block in global.css.
+//
+// This component and LanguageSelect/VoiceSelect are the plan's "kept strictly
+// separate" pair: circular icon controls here, `rounded-app` 6px squares
+// there. DESIGN.md: "Don't mix the button shapes within one context."
+//
+// No transition is declared. DESIGN.md documents no hover states and no motion
+// timings, and inventing one is a token the design system does not have.
+
+interface Props {
+	/** Rendered in the centre. An inline SVG, not a glyph. */
+	icon: string;
+	label: string;
+	/** Adds the pulsing ink-filled state. */
+	recording?: boolean;
+	disabled?: boolean;
+}
+
+const { icon, label, recording = false, disabled = false } = Astro.props;
+---
+
+<button
+	type="button"
+	class:list={[
+		'flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-full border border-hairline bg-elevated text-ink',
+		'recording:animate-recording recording:border-ink recording:bg-ink recording:text-on-primary',
+		disabled && 'cursor-not-allowed opacity-50',
+	]}
+	disabled={disabled}
+	aria-pressed={recording && !disabled}
+	aria-label={label}
+	data-recording={recording ? 'true' : 'false'}
+>
+	<Fragment set:html={icon} />
+</button>

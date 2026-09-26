@@ -1,11 +1,37 @@
 ---
-import Welcome from '../components/Welcome.astro';
+import Hero from '../components/Hero.astro';
 import Layout from '../layouts/Layout.astro';
 
-// Welcome to Astro! Wondering what to do next? Check out the Astro documentation at https://docs.astro.build
-// Don't want to use any of this? Delete everything in this file, the `assets`, `components`, and `layouts` directories, and start fresh.
+// The two panels land in Phase 5 (Text/File → Speech) and Phase 6
+// (Speech → Text). Nothing is stubbed here: an empty mount point that renders
+// a placeholder would be a state the design system never sanctioned.
 ---
 
-<Layout>
-	<Welcome />
+<Layout
+	title="GeminiTTS — speech to text, text to speech"
+	description="Record speech and get clean structured writing, or turn a document into natural speech. The Gemini API key never leaves your server."
+>
+	<Hero
+		eyebrow="Gemini · speech ⇄ text"
+		title="Say it. Write it. Say it back."
+		lede="Record speech and get clean, structured writing — or paste a document and hear it read back. English, বাংলা, हिन्दी, or let it auto-detect. Your API key never leaves this server."
+	/>
+
+	<main id="panels" class="container-page pb-24">
+		<!-- Phase 5 mounts TtsPanel.astro; Phase 6 mounts SttPanel.astro. -->
+	</main>
+
+	{/* DESIGN.md `components.footer`: canvas background, top hairline, body
+	    grey text, {typography.body-md}, padding {spacing.3xl} {spacing.lg}
+	    → 64px 24px. */}
+	<footer class="border-t border-hairline py-16">
+		<div class="container-page flex flex-col gap-8 sm:flex-row sm:items-baseline sm:justify-between">
+			<p class="text-sm leading-5 text-body">
+				GeminiTTS — <span class="text-ink">speech to text, text to speech</span>
+			</p>
+			<p class="font-mono text-xs leading-4 text-mute">
+				gemini-3.5-transcribe · gemini-3.8-flash-lite-tts
+			</p>
+		</div>
+	</footer>
 </Layout>

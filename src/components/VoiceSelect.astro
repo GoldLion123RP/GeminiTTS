@@ -1,0 +1,43 @@
+---
+// 4.3 — VoiceSelect. Same `text-input` chrome as LanguageSelect — one shape
+// for both selects, 6px square, hairline, white. The plan's rule is that the
+// two button shapes are never mixed *within one context*, and two selects
+// sitting side by side are the same context.
+//
+// Grouping is native <optgroup>. Free, accessible, keyboard-navigable, zero
+// JS — which is exactly why the plan chose it over a custom listbox.
+
+import { VOICE_GROUPS, DEFAULT_VOICE } from '../lib/gemini/voices';
+
+interface Props {
+	id: string;
+	name: string;
+	value?: string;
+	label: string;
+}
+
+const { id, name, value = DEFAULT_VOICE, label } = Astro.props;
+---
+
+<div class="flex flex-col gap-2">
+	<label class="font-mono text-xs leading-4 font-medium tracking-normal text-mute uppercase" for={id}>
+		{label}
+	</label>
+	<select
+		id={id}
+		name={name}
+		class="cursor-pointer rounded-app border border-hairline bg-elevated px-3 py-2 font-sans text-sm leading-5 text-ink"
+	>
+		{
+			VOICE_GROUPS.map((group) => (
+				<optgroup label={group.character}>
+					{group.voices.map((voice) => (
+						<option value={voice.name} selected={voice.name === value}>
+							{voice.name}
+						</option>
+					))}
+				</optgroup>
+			))
+		}
+	</select>
+</div>
