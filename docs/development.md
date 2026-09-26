@@ -227,8 +227,21 @@ because Smart mode formats spoken structure into paragraphs and lists while
 Verbatim returns flat prose, which makes the output's line structure the
 discriminator. `--mode verbatim` runs the control that must come back flat.
 
+**Use your own BYOK key.** `STT_VERIFY_KEY` (preferred) or `GEMINI_API_KEY`;
+either is read by the local process and goes straight to Google, so the app's
+server is never involved — the same trust property the browser-direct mode
+exists to provide. A bad key fails authentication before anything is billed, so
+a wrong key costs nothing.
+
+**Do not settle this from the transcript in the UI.** The app runs a second,
+text-only structure pass after transcription (`src/lib/gemini/transcribe.ts`),
+and *that* pass can add paragraphs and lists on its own. A well-structured
+transcript in the panel is therefore not evidence that Smart mode was honoured.
+This script calls pass 1 only, which is the sole place the question can be
+answered.
+
 Costs two requests (one TTS to build the audio, one STT to transcribe) against a
-free tier with a daily ceiling, so read `GET /api/health` first.
+free tier with a daily ceiling.
 
 ## Diagnosing a rejected or missing key
 

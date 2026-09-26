@@ -44,17 +44,32 @@
  *   bun run verify:stt -- --mode verbatim   # control: must come back flat
  *   bun run verify:stt -- --audio ./speech.webm
  *
- * Requires `GEMINI_API_KEY` in the environment (server-side). It spends one
- * TTS request to build the audio and one STT request to transcribe it, so it
- * costs two requests of the free tier's daily budget. Read
- * `GET /api/health` first: it probes `models?pageSize=1` and costs no quota.
+ * Key: `STT_VERIFY_KEY` (your own AI Studio key) or `GEMINI_API_KEY`. Either is
+ * read by this local process only and goes straight to Google; the app's server
+ * is not involved, which is the same trust property as the browser-direct BYOK
+ * mode and is why your own key is a perfectly good substitute for a server key
+ * here.
+ *
+ * Requires a Gemini key in the environment. It spends one TTS request to build
+ * the audio and one STT request to transcribe it, so it costs two requests of
+ * the free tier's daily budget. A bad key fails authentication before anything
+ * is billed, so an invalid key costs nothing.
  */
 
 import { writeFile, unlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-const API_KEY = process.env.GEMINI_API_KEY;
+// A BYOK key, read by THIS local process only. It is never sent to the app's
+// server, never written to disk, and never put in a URL — the same property
+// the browser-direct mode exists to provide. `GEMINI_API_KEY` is accepted as a
+// fallback so the same command works if you happen to have a server key
+// exported, but prefer the explicit name: it makes the trust path obvious at a
+// glance in your shell history.
+//
+// `STT_VERIFY_KEY=… bun run verify:stt`
+const API_KEY = process.env.STT_VERIFY_KEY ?? process.env.GEMINI_API_KEY;
+const KEY_SOURCE = process.env.STT_VERIFY_KEY ? 'STT_VERIFY_KEY (BYOK)' : 'GEMINI_API_KEY (server)';
 const BASE = 'https://generativelanguage.googleapis.com/v1beta';
 
 const argv = process.argv.slice(2);
@@ -74,10 +89,12 @@ const PASSAGE = [
 ].join(' ');
 
 if (!API_KEY) {
-	console.error('GEMINI_API_KEY is not set. This test needs a working key.');
-	console.error('Read GET /api/health first — it distinguishes "not loaded" from "rejected".');
+	console.error('No key. Set STT_VERIFY_KEY (your own AI Studio key — BYOK) or GEMINI_API_KEY.');
+	console.error('This test needs a working key, and the error you get without one is the');
+	console.error('absence of a key, not a verdict on the code.');
 	process.exit(2);
 }
+console.log(`key:    ${KEY_SOURCE} — read by this process only, never sent to the app's server`);
 
 /** Synthesise the passage, unless a real recording was supplied. */
 async function buildAudio() {
