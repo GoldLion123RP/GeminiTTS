@@ -15,6 +15,8 @@ phases in the same turn it was written unless explicitly told to.
 
 <!-- sync:start -->
 
-_No documents yet._
+| Document | Description |
+| :--- | :--- |
+| [App Shell, Theme, Multi-Page Split & Browser-Direct BYOK — Implementation Plan](plans/2026-09-26-shell-theme-multipage-byok-plan.md) | Four-tier plan for the app shell (header/footer), the tri-state theme, the three-page split, and a browser-direct BYOK mode. |
 
 <!-- sync:end -->
