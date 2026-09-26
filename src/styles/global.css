@@ -169,8 +169,16 @@
     color: var(--color-link);
   }
 
-  /* DESIGN.md: "reserve {colors.link} for links and focus" */
-  :where(:focus-visible) {
+  /* DESIGN.md: "reserve {colors.link} for links and focus"
+
+     Not `:where(:focus-visible)`. That selector has ZERO specificity, so a
+     focus ring this weak loses to any plain utility that touches `outline` —
+     the same tie Phase 4 hit with the `recording`/`latin` variants, where the
+     outcome depended on emission order rather than on the class list. A bare
+     `:focus-visible` is 0,1,0, which makes the ring deterministically win
+     against the element's own base declarations. Verified in the browser:
+     every tab stop computes to `2px solid rgb(0, 112, 243)`. */
+  :focus-visible {
     outline: 2px solid var(--color-link);
     outline-offset: 2px;
   }

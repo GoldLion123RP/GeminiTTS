@@ -3,7 +3,7 @@ Doc-Type: Full
 
 # GeminiTTS — Implementation Plan
 
-<!-- desc: Four-tier phased implementation plan derived from the design spec. Phases 0–6 executed; Phase 7 pending. -->
+<!-- desc: Four-tier phased implementation plan derived from the design spec. Phases 0–7 executed; 7.5 calibration and 7.7 audit complete. -->
 
 > [!IMPORTANT]
 > **Stack ceiling:** Astro 7 (static scaffold → `output: 'server'`), Tailwind CSS v4 via `@tailwindcss/vite`, bun. `GEMINI_API_KEY` is a **secret server var** — no `PUBLIC_` prefix, ever.
@@ -314,15 +314,18 @@ const WORD_SPLIT = /\s+/u;
 **Dependencies:** 1.2
 
 ```ts
-export const CHARS_PER_SECOND = 14;   // CALIBRATED — see below
+export const CHARS_PER_SECOND = 14;   // SUPERSEDED in Phase 7.5 — see the caution above
 export const COST_PER_MILLION_OUTPUT_TOKENS_USD = 6.0;
 export const COST_PER_MILLION_INPUT_TOKENS_USD = 0.5;
 ```
 
 Duration is `chars / CHARS_PER_SECOND`; cost is derived from the *measured* PCM output of a real generation once Phase 6 has run end-to-end.
 
+> [!NOTE]
+> **Both statements below are superseded by Phase 7.5.** Duration is now `chars / rate[script]`, and the rates are measured. `AUDIO_TOKENS_PER_SECOND = 25` was already verified in Phase 1 and is unchanged.
+
 > [!CAUTION]
-> **`CHARS_PER_SECOND = 14` is a placeholder, not a measurement.** The audio-token-to-seconds ratio is unpublished. Before this plan is considered done, generate one known passage, record actual duration, and solve for the constant. The UI labels the figure "estimated" until then. Shipping the placeholder uncalibrated would be exactly the kind of unverified claim this project forbids.
+> **RESOLVED IN PHASE 7.5 — and the premise was wrong.** §1.3 specified a single `CHARS_PER_SECOND = 14` and warned it was uncalibrated. Measuring seven real generations showed **the speaking rate is script-dependent, so no single constant can be correct**: English averaged 15.4 chars/s, Bengali 11.6, Hindi 12.0. The best global value (12) is 11.0% off on average and 30% off at worst. `estimate.ts` now carries per-script rates measured against real output, and `calibrated` reports `true`. See the Phase 7.5 changelog entry.
 
 #### 1.4 — Tests
 **Goal:** prove the pure modules.
@@ -580,10 +583,13 @@ if (event.code === 'Space') { event.preventDefault(); toggle(); }
 
 ### Phase 7 — Verification, documentation, review gates
 
-**Files:** `README.md` [MOD]
+**Files:** `README.md` [MOD], `src/lib/audio/estimate.ts` [MOD — calibrated], `src/lib/audio/estimate.test.ts` [MOD], `src/components/TtsPanel.astro` [MOD], `src/pages/api/endpoints.test.ts` [MOD], `src/styles/global.css` [MOD]
 **Dependencies:** Phases 0–6
 
 Run the full §5 matrix. Then load the **`web-design-guidelines`** skill and audit the result; load **`code-skeptic`** before claiming completion. `README.md` is updated in the same turn as the code that makes it false — not deferred.
+
+> [!NOTE]
+> **Executed 2026-09-26.** 7.5 turned out to be a code change, not a constant tweak: the measurement showed the single-constant premise was false, so `estimate.ts` grew script detection and per-script rates. 7.7 found one real defect (the focus ring had zero specificity). 7.6's live transcript could not be exercised — see the API-credential changelog entry.
 
 ---
 
@@ -629,16 +635,16 @@ Run the full §5 matrix. Then load the **`web-design-guidelines`** skill and aud
   - [x] 6.4 Stop → transcribe → auto-copy with honest fallback
   - [x] 6.5 <kbd>Space</kbd> toggle with form-field and `repeat` guards
   - [x] 6.6 Raw-transcript disclosure + structure toggle
-- [ ] **Phase 7 — Verification & docs**
-  - [ ] 7.1 `bun test` green
-  - [ ] 7.2 `bun run build` zero errors
-  - [ ] 7.3 `bun run check` zero errors
-  - [ ] 7.4 Grep `dist/` for the key — zero matches
-  - [ ] 7.5 **Calibrate `CHARS_PER_SECOND` against a real generation**
-  - [ ] 7.6 Responsive + keyboard + reduced-motion pass
-  - [ ] 7.7 `web-design-guidelines` audit
-  - [ ] 7.8 `code-skeptic` review with command output
-  - [ ] 7.9 `README.md` synchronised
+- [x] **Phase 7 — Verification & docs**
+  - [x] 7.1 `bun test` green — 148 pass / 0 fail / 4 408 assertions / 9 files
+  - [x] 7.2 `bun run build` zero errors (exit 0, zero warnings)
+  - [x] 7.3 `bun run check` zero errors (0/0/0 over 42 files)
+  - [x] 7.4 Grep `dist/` for the key — zero matches, **after the vacuous glob was caught**
+  - [x] 7.5 **`CHARS_PER_SECOND` calibrated — and the single-constant premise was wrong**; now per-script, measured
+  - [x] 7.6 Responsive + keyboard + reduced-motion pass
+  - [x] 7.7 `web-design-guidelines` audit — one real fix (focus-ring specificity)
+  - [x] 7.8 `code-skeptic` review with command output
+  - [x] 7.9 `README.md` synchronised
 
 ---
 
@@ -682,15 +688,19 @@ bun run check          # must report zero type errors (`astro check`)
 
 ### 5.5 Secret-safety gate (blocking)
 
-> **Status: re-run for real on 2026-09-26 (Phase 6).** Phase 6 added the first substantial client JavaScript, which is exactly what could carry a key, so the gate was re-run against the final Phase 6 build. `Select-String` for an `AIza`-prefixed key literal across **all** of `dist/` returns **0 matches**, and `GEMINI_API_KEY`, `getSecret`, `generativelanguage`, `@google/genai`, `unpdf` and `mammoth` appear **0** times under `dist/client/`. The `generativelanguage` result is the meaningful one: the client bundle does not contain the Live host at all, because the socket URL is handed over by the server rather than constructed in the browser. The client bundle is two files, 10 365 + 6 721 bytes. Re-run once more in Phase 7.
+> **Status: re-run for real on 2026-09-26 (Phase 7), and the command in this section was WRONG.** `Select-String -Path "dist\**"` matches only **one** file, so it reported `0 matches` for the key while actually scanning essentially nothing — the exact "looks like a pass but was not one" failure Phase 3 already recorded once. The working form on Windows is `dist\**\*`, which reaches all 45 files. With it: `AIza` across all of `dist/` = **0**, and `GEMINI_API_KEY` / `getSecret` / `generativelanguage` / `unpdf` / `mammoth` / `pdfjs` under `dist/client/` = **0**. Non-vacuity is proven the other way: the same tokens **do** appear under `dist/server/` (`client_*.mjs`, `endpoints_*.mjs`, `live-token_*.mjs`). Re-run with the corrected glob, and add a positive control, or the zero is meaningless.
 
 ```powershell
 # must return zero matches
-Select-String -Path "dist\**" -Pattern "<your key value>" -SimpleMatch
+Select-String -Path "dist\**\*" -Pattern "<your key value>" -SimpleMatch
 
 # structural check, independent of the key's value: the name must never appear
-# under dist\client\, and dist\client\ must contain no JavaScript at all
-Select-String -Path "dist\client\**" -Pattern "GEMINI_API_KEY|getSecret|generativelanguage"
+# under dist\client\ (a working glob is required here too)
+Select-String -Path "dist\client\**\*" -Pattern "GEMINI_API_KEY|getSecret|generativelanguage"
+
+# positive control — proves the glob reaches real files AND that the check
+# is not passing because the server code is missing from the build
+Select-String -Path "dist\server\**\*" -Pattern "GEMINI_API_KEY|getSecret|generativelanguage"
 ```
 
 A single match is a hard stop. Re-audit every client-reachable module for `getSecret` misuse.
@@ -740,12 +750,12 @@ A single match is a hard stop. Re-audit every client-reachable module for `getSe
 **Confidence: Medium-High** on architecture, sequencing, and the STT/TTS pipelines — all model capabilities, formats, limits, and framework constraints are verified against primary sources dated 2026-09-26.
 
 **Gaps / assumptions, stated plainly:**
-- **The Live socket path form is unverified against a running connection.** `liveSocketUrl()` uses the documented long form (`…/v1beta/ws/google.ai.BidiGenerateContentConstrained?access_token=…`); Google's reference client uses a shorter `google.ai.…` variant. Both are believed equivalent, and neither has been dialled with a key present. This is the first thing to check if the live path 400s — **not** the token, which Phase 2 verified, and not the setup message, which was cross-checked against the same reference client.
-- **The end-to-end live draft and batch transcript are unproven against the real API.** Every browser verification of Phase 6 ran with no `.env`, which proved the *degradation* paths (token mint failure, missing key, honest error rendering, no stuck state) but not a successful transcript. A recording with a key present is still required, and it is also what Phase 7.5 needs to calibrate `CHARS_PER_SECOND`.
-- **Smart mode may be silently downgraded to Verbatim.** `audioTranscriptionConfig` is the SDK's typed field on the `generateContent` path, but the transcribe documentation documents a differently-named REST field on the Interactions path. One recording containing an enumerated list settles it in Phase 7 — Smart formats lists, Verbatim does not.
-- **`CHARS_PER_SECOND`** is a placeholder until Phase 7.5 measures it. The UI says "estimated" until then.
-- **The `dist/` secret grep was vacuous until Phase 3** created the routes that import these modules. It is now a real gate, re-verified on 2026-09-26 — see the Phase 3 changelog. It must be re-run in Phase 7 against the final build.
-- **§2.4 is resolved** (2026-09-26) and Phase 4.1 is unblocked. The accepted trade-offs: Indic text inside a mixed-language paragraph will not match the surrounding Latin, and Bengali/Hindi display type carries normal rather than −2.4px tracking. Both were chosen knowingly.
+- **The end-to-end live draft and batch transcript are STILL unproven against the real API.** Phase 7 attempted them and the key returned `401 ACCESS_TOKEN_TYPE_UNSUPPORTED` on every endpoint after the free-tier daily quota was exhausted. Seven *syntheses* did succeed and are the calibration data, so the TTS path is proven; the STT path is not. A recording with a working key is still required — and it is what settles Smart mode. This is now the single largest open item.
+- **Smart mode may still be silently downgraded to Verbatim.** `audioTranscriptionConfig` is the SDK's typed field on the `generateContent` path, but the transcribe documentation documents a differently-named REST field on the Interactions path. One recording containing an enumerated list settles it — **unblocked only by the credential fix above.**
+- **The Live socket path form is unverified against a running connection.** `liveSocketUrl()` uses the documented long form; Google's reference client uses a shorter variant. First thing to check if the live path 400s with a working key.
+- **The `hi` speaking rate rests on a single sample** and is the least trustworthy constant in `estimate.ts`. `en` carries ±11% because the rate is voice-dependent (13.8–17.1 chars/s across three samples). Both are labelled in the source; both would benefit from more samples.
+- **The §5.5 secret grep was vacuous until Phase 7 caught its own glob.** It now runs with `dist\**\*` and ships a positive control. This is the second time in this project that a passing check was measuring nothing.
+- **§2.4 is resolved** (2026-09-26). The accepted trade-offs: Indic text inside a mixed-language paragraph will not match the surrounding Latin, and Bengali/Hindi display type carries normal rather than −2.4px tracking.
 - Cost figures come from your screenshot and Google's release notes, not a live pricing-page fetch.
 - No performance budget is defined beyond "no hydration mismatch"; a bundle-size ceiling was not requested.
 
@@ -755,6 +765,12 @@ A single match is a hard stop. Re-audit every client-reachable module for `getSe
 
 | Date | Entry |
 |---|---|
+| 2026-09-26 | **Phase 7.5 executed — the speaking rate is script-dependent, and the plan's single constant could not be made correct.** Seven real generations (2 voices × 3 scripts) were measured from the WAV headers: English **15.4** chars/s, Bengali **11.6**, Hindi **12.0**. The plan's `CHARS_PER_SECOND = 14` is a 32% over-quote for Bengali and a 3% under-quote for English — and because cost scales with duration, that is a real money error in both directions, not a rounding wobble. The best *single* constant (12) is still 11.0% off on average and **30% off at worst**, so "pick a better number" was not an available fix. `estimate.ts` now classifies the dominant script from explicit Unicode block ranges (Bengali U+0980–09FF, Devanagari U+0900–097F) and applies a per-script rate. **English is counted as a candidate rather than being a default**, because an "any Indic letter present" rule prices an English paragraph containing one Bengali word as Bengali and over-quotes it by a third — a bug the first implementation had, caught by a test. Verified end-to-end through `/api/estimate` against the real audio: English within 1.4–11.3%, Bengali within 1.4–5.0%, Hindi within 0.2%. `calibrated` is now `true` and the panel prints the rate it used.** |
+| 2026-09-26 | **The English rate is the weakest number in the estimator, and the tolerance test was widened to admit that rather than to hide it.** Three English samples span 13.8–17.1 chars/s — a 24% spread — and it tracks the *voice*, not the text: Charon read 17.1 chars/s where Kore read 13.8 on comparable prose. A single `en` rate therefore carries ±11% error, and my first test asserted a 5% band that the real data cannot satisfy. The honest response was a per-script tolerance (16% for English, 6% for Bengali, which is tight at 11.3–12.2) with the spread documented in the source comment, **not** loosening the Bengali band to match English. A test asserting a bound the evidence does not support is a test that will be quietly relaxed the next time it fails. `hi` rests on a **single** sample and is labelled as the least trustworthy figure in the file; it needs more samples before it deserves the same confidence. |
+| 2026-09-26 | **The §5.5 secret grep was passing vacuously for the second time, and the same command is still wrong in the plan.** `Select-String -Path "dist\**"` matches exactly **one** file, so the gate reported `0 matches` for `GEMINI_API_KEY` across the whole build while scanning essentially nothing — the identical "green but hollow" shape as the Phase 3 entry. Caught it by running a **positive control** (`Pattern "import"` → 1 file with the bad glob, 28 with `dist\**\*`). With the corrected glob: `AIza` = 0 across all 45 files, server-only tokens = 0 under `dist/client/`, and the same tokens **do** appear under `dist/server/` — so the zero is real and non-vacuous. The plan's §5.5 command block is corrected and now ships a positive control, because a zero-match assertion with no way to detect a zero-match-by-inattention is a gate that will fail silently again. This is the second time in this project that a passing check was measuring nothing. |
+| 2026-09-26 | **`web-design-guidelines` audit found the focus ring had zero specificity — the same defect Phase 4 fixed in the custom variants.** `global.css` used `:where(:focus-visible)`, and `:where()` contributes **nothing** to specificity, so the ring could be overridden by any plain utility touching `outline` depending only on emission order. Now a bare `:focus-visible` (0,1,0). Verified by driving real <kbd>Tab</kbd> presses: every stop computes to `2px solid rgb(0, 112, 243)` = `--color-link`, exactly as `DESIGN.md` requires. Also confirmed **absent**: `transition: all`, `outline-none` without replacement, `user-scalable=no`, click handlers on non-button elements, `<img>` without dimensions, and unlabeled form controls — the highest-risk anti-patterns in the guideline set. Remaining known gaps, all deliberate: currency and counts use `toLocaleString()` rather than `Intl.NumberFormat` with an explicit locale (deliberate — a Bengali reader should see Bengali digit grouping), and there is no skip link. |
+| 2026-09-26 | **Phase 7 executed. Gates: `bun test` 148 pass / 0 fail / 4 408 assertions across 9 files (up from 135 — the estimator suite grew), `bun run build` exit 0 with zero warnings, `astro check` 0 errors / 0 warnings / 0 hints over 42 files, §5.5 secret grep 0 matches with a working glob and a passing positive control. Browser-verified against `node dist/server/entry.mjs`: no horizontal overflow at 375 / 768 / 1280 px, `2px solid rgb(0,112,243)` focus ring at all 9 tab stops, `prefers-reduced-motion: reduce` collapsing the recording pulse to `1e-05s` / 1 iteration, and <kbd>Space</kbd> inside the TTS textarea inserting a space **without** starting recording (§6.5's negative case).** |
+| 2026-09-26 | **The live transcript and the end-to-end generation remain unproven — the API key stopped authenticating mid-session, and that is an account condition, not a regression.** Seven synthesizations succeeded early in Phase 7 (those WAVs are the calibration data, and the estimator was verified against them). The account then hit the free-tier daily quota, and after that **every** Gemini call returned `401 … ACCESS_TOKEN_TYPE_UNSUPPORTED` — including `/api/synthesize`, which had been working minutes earlier with the same key. Diagnosed rather than assumed: the error is an auth/account condition, `estimate.ts` touches no auth path, and the same key failed on three unrelated endpoints. **What this means for the plan's gaps:** the §5.6 items "confirm Smart mode is in effect" and the end-to-end STT transcript are **still open** — they need a working key and quota, and a recording containing an enumerated list. The Hindi rate likewise needs more samples. Everything else in §5.6 was exercised and passes. A tool that reports "the credential died" while a test run looks green is exactly the situation the `code-skeptic` gate exists for, so it is recorded rather than glossed. |
 | 2026-09-26 | **Every "GEMINI_API_KEY is not set" in the Phase 6 report was my own testing error, and I reported it as though it were the user's missing key.** I started the standalone server with `node dist/server/entry.mjs`, which does not load `.env` — `getSecret()` compiles to `process.env[key]`, and Astro populates `process.env` only in `astro dev` and `astro build`. The user *had* written a correct `.env`; nothing ever read it. The diagnosis then walked further from the truth than the bug: the value is 53 characters and does not begin `AIza`, so a real key may still be rejected upstream, but the first thing to check was obviously the key. **This is the failure mode the plan's own §5.6 manual acceptance list exists to prevent, and I ran a whole phase through the build without a smoke check that would have caught it.** Fixed with two additions, both verified: `bun run start` (`node --env-file-if-exists=.env dist/server/entry.mjs` — a built-in Node ≥ 20.6 flag, no dotenv dependency, and `-if-exists` so a machine without `.env` still boots) and `scripts/smoke.mjs` (`bun run smoke`), which starts the built server and reports the page, both panels, and whether the server can see a key. **Proven by A/B on the same build and the same `.env`: 500 without the flag, 200 with it.** `docs/development.md` and `README.md` now both carry the warning, and the README's previous `node ./dist/server/entry.mjs` row — which recommended the exact command that causes this — is gone. |
 | 2026-09-26 | **The error message was correct and still sent the investigation in the wrong direction, which is why this took a rebuild to diagnose.** `"GEMINI_API_KEY is not set. Copy .env.example to .env…"` is a true statement about `process.env` — and it is also the single most misleading thing the app can say, because it names the one artifact that is fine. A missing `.env` and a rejected key produce byte-identical output. `scripts/smoke.mjs` exists to break that tie: it distinguishes "the server cannot see the variable" from "the variable is present but the call failed", which the endpoint response alone cannot. **Recorded as a general rule: a correct error message that cannot see its own cause is worse than a vague one, because it supplies false confidence.** |---|
 | 2026-09-26 | **Phase 6 executed and verified. `src/components/SttPanel.astro` (new), `src/components/TranscriptView.astro` (new), `src/pages/index.astro` (2-up grid, both panels mounted), `src/pages/api/live-token.ts` (now returns a ready-to-dial `url`), `src/lib/gemini/live-token.ts` (URL corrected, `model` param dropped), `src/components/MicButton.astro` (optional `id` prop), `src/lib/gemini/live-token.test.ts` (new, 5 tests), `src/pages/api/endpoints.test.ts` (+2 tests). Gates: `bun test` 135 pass / 0 fail / 4 370 assertions across 9 files, `bun run build` exit 0 with zero warnings, `astro check` 0 errors / 0 warnings / 0 hints over 41 files, §5.5 secret grep 0 matches. Browser-verified against `node dist/server/entry.mjs` at 375 / 768 / 1280 px, including the record → stop → transcribe sequence and both <kbd>Space</kbd> cases.** |

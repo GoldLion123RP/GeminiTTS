@@ -10,11 +10,14 @@ An Astro + Tailwind CSS v4 front end for GeminiTTS, built on the Geist design sy
 > takes pasted or uploaded `.txt` / `.md` / `.pdf` / `.docx`, shows a duration
 > and cost estimate, and generates a downloadable WAV.
 >
-> Not yet verified: a successful end-to-end transcript and a successful
-> generation both need a real `GEMINI_API_KEY`. What *has* been verified with
-> no key present is the degradation behaviour — a failed token mint leaves
-> recording untouched, the batch path still runs, and failures render as plain
-> language with no stack trace.
+> **Speech → Text is not yet verified end to end.** No successful transcript has
+> been recorded: the API key stopped authenticating mid-verification (see
+> [Known gaps](#known-gaps)). What *is* verified is the degradation behaviour —
+> a failed token mint leaves recording untouched, the batch path still runs, and
+> failures render as plain language with no stack trace.
+>
+> **Text → Speech is verified against the real API.** Seven generations were
+> produced and used to calibrate the cost estimator.
 >
 > The approved design spec and the phased build plan, with a live progress
 > checklist, are tracked in `docs/superpowers/`.
@@ -192,17 +195,48 @@ Bengali and Devanagari glyphs come from the reader's own system font fallback.
 > `["sans-serif"]`, which would drop the `Arial` and mono fallbacks `DESIGN.md`
 > specifies.
 
-### Known gap
+### Cost estimation
 
-No `@font-face` is emitted yet. Astro only generates declarations for font
-families a stylesheet actually references, and nothing currently references
-`--font-geist` or `--font-geist-mono` — the files download and cache, but the
-built CSS declares nothing. `src/styles/global.css` is still bare
-`@import 'tailwindcss'` with no `@theme` block mapping the `DESIGN.md` tokens to
-Tailwind utilities.
+The estimate is pure local arithmetic — no Gemini call, so it cannot fail on
+quota, latency, or a missing key, and it costs nothing. Cost follows from
+duration, which follows from a **measured** speaking rate:
 
-Both need doing before any real UI work: the `@theme` block in `global.css` must
-also bind the font variables, otherwise the fonts are fetched and never applied.
+| Script | Rate | Basis |
+| :--- | --- | :--- |
+| English / Latin | 15.4 chars/s | 3 samples, 13.8–17.1 |
+| Bengali | 11.6 chars/s | 3 samples, 11.3–12.2 |
+| Hindi / Devanagari | 12.0 chars/s | **1 sample** |
+
+These were measured on 2026-09-26 by generating real audio and reading the
+duration from the returned WAV header. The rate is **script-dependent**, which a
+single constant cannot express: the best global value is still 11% off on average
+and 30% off at worst. `estimate.ts` classifies the dominant script by Unicode
+block range and applies the matching rate; the panel prints the rate it used.
+
+Two honest limits: the English spread is **voice-dependent** (Charon read
+17.1 chars/s where Kore read 13.8 on comparable prose), so the English estimate
+carries roughly ±11% error; and the Hindi figure rests on a single sample. Both
+are labelled in the source. Audio tokens bill at 25/second, so duration error
+propagates directly into cost.
+
+### Known gaps
+
+- **No successful end-to-end transcript.** The API key returned
+  `401 ACCESS_TOKEN_TYPE_UNSUPPORTED` on every endpoint once the free-tier daily
+  quota was exhausted, mid-verification. This is an account condition, not a
+  code fault — `/api/synthesize` had succeeded minutes earlier with the same
+  key. Needs a working key to close.
+- **Smart mode is unconfirmed.** `audioTranscriptionConfig` is the SDK's typed
+  field on the `generateContent` path, but the transcribe docs document a
+  differently-named REST field on the Interactions path. If the backend ignores
+  it, Smart mode is *silently* downgraded to Verbatim — no error, worse output.
+  One recording containing an enumerated list settles it: Smart formats lists,
+  Verbatim does not.
+- **The Live socket path form is unverified against a live connection.** The
+  documented long form is used; Google's reference client uses a shorter
+  variant. Check this first if the live draft 400s.
+- **Hindi speaking rate has one sample**, and English carries ±11% from
+  voice-dependence.
 
 
 ---
