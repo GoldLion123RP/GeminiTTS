@@ -167,6 +167,44 @@ try {
 		);
 		if (!reducedMotion) exitCode = 1;
 
+		// PHASE 6.2: the no-flash proof, asserted against the SERVED html.
+		//
+		// Why this is here and not in the browser matrix: a real browser
+		// cannot prove "there is no flash". A CDP screencast only sees frames
+		// the compositor actually produced, and the Phase 6 control run
+		// injected a genuine light-first paint that the screencast did NOT
+		// report — the whole document is parsed and styled before the first
+		// frame is produced, so a sub-frame flash is unobservable by
+		// construction. Three in-page probes failed the same way, each
+		// reading a transparent or unstyled canvas. A check that cannot fail
+		// is not a check, so the guarantee is asserted where it is actually
+		// provable: in the byte order of the response.
+		//
+		// The claim is a proof, not a sample. The canvas colour is derived
+		// from the `data-theme` attribute, and the attribute is set by an
+		// inline script that appears inside <head> — before <body> exists and
+		// before the render-blocking stylesheet. So at the earliest instant
+		// any paint is possible, the correct value is already in place. If
+		// the script is hoisted, deferred, moved below the stylesheet, or
+		// pushed past </head>, a light frame becomes possible and this fails.
+		const headEnd = ttsHtml.indexOf('</head>');
+		const bodyStart = ttsHtml.indexOf('<body');
+		const bootstrap = ttsHtml.search(/setAttribute\(\s*['"]data-theme['"]/);
+		const scriptTag = ttsHtml.lastIndexOf('<script', bootstrap);
+		const styleLink = ttsHtml.search(/<link[^>]+rel="stylesheet"/);
+		const noFlash =
+			headEnd !== -1 &&
+			bodyStart !== -1 &&
+			bootstrap !== -1 &&
+			scriptTag !== -1 &&
+			scriptTag < headEnd &&
+			headEnd <= bodyStart &&
+			(styleLink === -1 || scriptTag < styleLink);
+		console.log(
+			`${noFlash ? '✓' : '✗'} chrome       no-flash ${noFlash ? 'bootstrap is inline in <head>, before <body> and before the stylesheet' : 'theme bootstrap is NOT ordered ahead of first paint'}`,
+		);
+		if (!noFlash) exitCode = 1;
+
 		// A test file under src/pages/ used to ship as a live route. It is
 		// gone (see `scripts/check-routes.mjs`), and this is the end-to-end
 		// half of that check: the URL must not resolve to a page.

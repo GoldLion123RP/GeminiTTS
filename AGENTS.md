@@ -48,7 +48,12 @@ structure, and the `bun install` drive quirk:
 - **Secrets.** Never read, parse, grep, or commit `.env`, `.env.local`, or any
   `*.env` file. Use `.env.example`. Never inline secrets into client code.
 - **Verification.** Never state a build, typecheck, or test passed without
-  pasting the actual command output. If a command was not run, say so.
+  pasting the actual command output. If a command was not run, say so. The
+  standing gates are `check:contrast`, `check:secrets`, `check:routes`, and
+  `check:shell` — each carries a positive control, and the first three have
+  caught a real defect. `check:shell` is newer: proven able to fail, but it has
+  not yet caught anything. `verify:stt` is a procedure, not a passing test: it
+  has never been run.
 - **Temp and scratch files** go under `docs/.scratch/`, never scattered in the
   project root or `/tmp`. Delete them once no longer needed. Full policy:
   [`docs/agent-workflow.md`](docs/agent-workflow.md#scratch-and-temp-files).

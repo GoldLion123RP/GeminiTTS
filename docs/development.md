@@ -21,6 +21,8 @@ Detail behind [`AGENTS.md`](../AGENTS.md). Read on demand.
 | `bun run check:contrast` | Recompute the WCAG contrast of every text token on every surface, both themes |
 | `bun run check:secrets` | Scan `dist/` and the client source for key material; run after `bun run build` |
 | `bun run check:routes` | Assert no test file under `src/pages/` is shipped as a live route; run after `bun run build` |
+| `bun run check:shell` | Assert the shell contract: the no-flash bootstrap ordering, the skip link, and the 640px nav switch (plan 6.2–6.4, structural half). Proven able to fail; has not yet caught a real defect |
+| `bun run verify:stt` | One live STT recording that settles whether Smart mode is honoured or silently downgraded to Verbatim. **Never executed** — see [Verifying STT end to end](#verifying-stt-end-to-end) |
 
 `bun run build` and `bun run check` are the two gates. Run both before opening a
 pull request. There is no CI enforcing them yet.
@@ -175,6 +177,58 @@ two: a planted file the detector must reject.
 
 **Where tests go.** `src/lib/**` and `src/tests/`, never `src/pages/`. A test
 beside the module it covers is fine; a test inside the routing tree is a URL.
+
+### `bun run check:shell`
+
+```
+bun run check:shell
+```
+
+The structural half of the plan's Phase 6 perceptual checks (6.2 no-flash, 6.3
+keyboard, 6.4 responsive). It asserts the preconditions a browser would
+otherwise have to discover: the theme bootstrap is `is:inline`, synchronous, and
+ordered ahead of the stylesheet; the skip link precedes the nav and targets an id
+that exists; no positive `tabindex`; no hard `w-[NNNpx]`; the nav/menu switch is
+expressed in `sm:` variants. All four detectors carry a positive control.
+
+It reads the **source** tree, not `dist/`, so a stale build cannot be mistaken
+for a verified shell.
+
+**What it cannot prove, and why the no-flash claim lives in `smoke.mjs`.** A
+browser cannot prove "there is no flash". A CDP screencast only sees frames the
+compositor actually produced, and Phase 6 verified this by injecting a genuine
+light-first paint: the screencast did **not** report it, because the document is
+parsed and styled before the first frame is produced. Three in-page probes
+failed the same way, each reading a transparent or unstyled canvas. So the
+screencast result is evidence that no *frame* was light, which is weaker than the
+claim, and the claim itself is asserted where it is provable: `smoke.mjs` checks
+the byte order of the **served** HTML — the inline bootstrap sits inside `<head>`,
+before `<body>` and before the stylesheet — which makes a light first paint
+impossible by construction rather than by observation.
+
+### `bun run verify:stt`
+
+```
+bun run verify:stt
+```
+
+One live recording that settles the project's largest inherited open item:
+whether `audioTranscriptionConfig.mode = SMART` is honoured, or silently
+downgraded to Verbatim — a failure that produces worse transcripts with no
+error, so it looks like success.
+
+**It has never been run.** No Gemini credential was available in the environment
+where it was written, so there is no output from it and no claim that it passes.
+Only the credential-absent path (`exit 2`, naming `/api/health`) has been
+exercised. Treat the file as a procedure awaiting a key, not as a test suite.
+
+It synthesises a passage containing an enumerated list — "first… second… third…" —
+because Smart mode formats spoken structure into paragraphs and lists while
+Verbatim returns flat prose, which makes the output's line structure the
+discriminator. `--mode verbatim` runs the control that must come back flat.
+
+Costs two requests (one TTS to build the audio, one STT to transcribe) against a
+free tier with a daily ceiling, so read `GET /api/health` first.
 
 ## Diagnosing a rejected or missing key
 

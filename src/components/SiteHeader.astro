@@ -188,11 +188,31 @@ const items = visibleNavItems();
 		};
 
 		trigger.addEventListener('click', () => {
-			setOpen(trigger.getAttribute('aria-expanded') !== 'true');
+			const open = trigger.getAttribute('aria-expanded') !== 'true';
+			setOpen(open);
+			// PHASE 6 FIX: opening the menu moves focus into it.
+			//
+			// The Escape handler below used to be bound to `menu` alone, and
+			// it was dead code: activating the trigger leaves focus ON the
+			// trigger, so a keydown never reached the menu and Escape did
+			// nothing. Found by the Phase 6 keyboard run, not by inspection —
+			// the listener was correct-looking and simply unreachable.
+			//
+			// Moving focus in is the fix that makes the rest coherent: it is
+			// what a disclosure pattern is supposed to do (WAI-ARIA: focus
+			// moves to the first item in the expanded region), it is what
+			// makes the now-reachable `keydown` fire, and it means a keyboard
+			// user who opens the menu is actually standing inside it rather
+			// than on a button whose label has flipped to "Close".
+			if (open) {
+				const first = menu.querySelector<HTMLAnchorElement>('a[href]');
+				first?.focus();
+			}
 		});
 
 		// Escape closes and returns focus to the trigger, so a keyboard user
-		// who opened the menu is never stranded behind it.
+		// who opened the menu is never stranded behind it. Bound on the menu
+		// because focus is inside it while it is open (see the fix above).
 		menu.addEventListener('keydown', (event: KeyboardEvent) => {
 			if (event.key === 'Escape') {
 				setOpen(false);
