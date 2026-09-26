@@ -28,14 +28,17 @@ Where any two disagree, this file wins.
 | Styling | Tailwind v4 via `@tailwindcss/vite` |
 | Stylesheet entry | `src/styles/global.css` (`@import 'tailwindcss'`), imported by `src/layouts/Layout.astro` |
 | Server secret | `GEMINI_API_KEY` — server-only, never `PUBLIC_`; declared in `src/env.d.ts` |
+| User secret | A BYOK Gemini key — browser-only, in `src/lib/client/keystore.ts`; never reaches our server (`bun run check:secrets`) |
 | Package manager | bun — `bun` / `bunx`. Never npm, pnpm, or yarn. |
 | Lockfile | `bun.lock` |
 | Type check | `bun run check` (`astro check`) |
 | Build / typecheck gates | `bun run build` and `bun run check` must both pass |
 
-Server output exists so Gemini calls never reach the browser. Anything touching
-the API key must stay server-side. Commands, project structure, and the
-`bun install` drive quirk: [`docs/development.md`](docs/development.md).
+Server output exists so *our* Gemini key never reaches the browser. Anything
+touching `GEMINI_API_KEY` must stay server-side; a user-supplied BYOK key is the
+one deliberate exception and lives only in `src/lib/client/`. Commands, project
+structure, and the `bun install` drive quirk:
+[`docs/development.md`](docs/development.md).
 
 ## Hard rules
 

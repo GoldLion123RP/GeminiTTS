@@ -226,6 +226,78 @@ describe('usingByok', () => {
 	});
 });
 
+describe('direct transport retry policy', () => {
+	/**
+	 * A regression test for a real bug, found by watching network calls in the
+	 * browser rather than by reading the code.
+	 *
+	 * `upstreamFailure` remaps a 400 to a 502 so the panel can render sensible
+	 * copy. A naive `response.status < 500` retry check then reads 502, calls
+	 * it transient, and issues a SECOND request for a request that can never
+	 * succeed — double-billing the user on precisely the input most likely to
+	 * be rejected. One click must produce exactly one upstream call.
+	 */
+	it('does not retry a 4xx that was remapped for display', async () => {
+		const { directSynthesize } = await import('./gemini-direct');
+		const seen: string[] = [];
+
+		globalThis.fetch = (async (input: RequestInfo | URL) => {
+			seen.push(typeof input === 'string' ? input : String(input));
+			return new Response(JSON.stringify({ error: { message: 'bad voice' } }), {
+				status: 400,
+				headers: { 'content-type': 'application/json' },
+			});
+		}) as typeof fetch;
+
+		const response = await directSynthesize(FAKE_KEY, {
+			text: 'Hello.',
+			voice: 'Kore',
+			language: 'auto',
+		});
+
+		expect(seen).toHaveLength(1);
+		expect(response.ok).toBe(false);
+		expect(response.status).toBe(502);
+		// The copy is the remapped 400 wording, not a generic failure.
+		expect(((await response.json()) as { error: string }).error).toContain('rejected the request');
+	});
+
+	it('retries a genuine 5xx exactly once', async () => {
+		const { directSynthesize } = await import('./gemini-direct');
+		let calls = 0;
+
+		globalThis.fetch = (async () => {
+			calls++;
+			return new Response('upstream boom', { status: 503 });
+		}) as unknown as typeof fetch;
+
+		const response = await directSynthesize(FAKE_KEY, {
+			text: 'Hello.',
+			voice: 'Kore',
+			language: 'auto',
+		});
+
+		// CHUNK_ATTEMPTS is 2, so one initial call plus one retry.
+		expect(calls).toBe(2);
+		expect(response.ok).toBe(false);
+	});
+
+	it('does not retry a 429', async () => {
+		const { directSynthesize } = await import('./gemini-direct');
+		let calls = 0;
+
+		globalThis.fetch = (async () => {
+			calls++;
+			return new Response('quota', { status: 429 });
+		}) as unknown as typeof fetch;
+
+		const response = await directSynthesize(FAKE_KEY, { text: 'Hello.', voice: 'Kore', language: 'auto' });
+
+		expect(calls).toBe(1);
+		expect(response.status).toBe(429);
+	});
+});
+
 describe('request routing', () => {
 	it('sends synthesize to our origin on the default path', async () => {
 		await request('synthesize', { text: 'Hello.' });

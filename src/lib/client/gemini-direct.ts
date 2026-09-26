@@ -62,22 +62,44 @@ function fail(message: string, status: number, detail?: string): Response {
  * confidently wrong instruction.
  */
 function upstreamFailure(status: number, raw: string): Response {
-  if (status === 400) {
-    return fail('Gemini rejected the request. The audio format, language, or voice may be unsupported.', 502, raw);
+  const response = status === 400
+    ? fail('Gemini rejected the request. The audio format, language, or voice may be unsupported.', 502, raw)
+    : status === 401 || status === 403
+      ? fail('Gemini rejected the API key. Check the key in this page’s settings.', 502, raw)
+      : status === 413
+        ? fail('The request was too large for Gemini. Record for less time, or split the text.', 413, raw)
+        : status === 429
+          ? fail('Gemini rate limit reached. Wait a moment and try again.', 429, raw)
+          : status >= 500
+            ? fail('Gemini is unavailable right now. Try again shortly.', 502, raw)
+            : fail('The request could not be completed.', 502, raw);
+
+  /**
+   * The retry predicate must see the UPSTREAM status, not this mapped one.
+   *
+   * This was a real bug, caught in the browser rather than by a test: a 400
+   * from Gemini is remapped to 502 for the UI, and a naive `status < 500`
+   * check then read 502, decided "transient, retry", and issued a SECOND
+   * billable request for a request that could never succeed. Doubling a
+   * user's spend on the exact input most likely to be rejected is not an
+   * acceptable bug, so the original status rides along out of band.
+   *
+   * 429 is deliberately passed through unchanged, so it is already correct and
+   * needs no marker.
+   */
+  if (status !== 429) {
+    Object.defineProperty(response, UPSTREAM_STATUS, { value: status, enumerable: false });
   }
-  if (status === 401 || status === 403) {
-    return fail('Gemini rejected the API key. Check the key in this page’s settings.', 502, raw);
-  }
-  if (status === 413) {
-    return fail('The request was too large for Gemini. Record for less time, or split the text.', 502, raw);
-  }
-  if (status === 429) {
-    return fail('Gemini rate limit reached. Wait a moment and try again.', 429, raw);
-  }
-  if (status >= 500) {
-    return fail('Gemini is unavailable right now. Try again shortly.', 502, raw);
-  }
-  return fail('The request could not be completed.', 502, raw);
+  return response;
+}
+
+/** Non-enumerable property carrying the real upstream status past the remap. */
+const UPSTREAM_STATUS = Symbol('upstreamStatus');
+
+/** The status a failed request should be *retried* on, ignoring UI remapping. */
+function retryableStatus(response: Response): number {
+  const carried = (response as unknown as Record<symbol, unknown>)[UPSTREAM_STATUS];
+  return typeof carried === 'number' ? carried : response.status;
 }
 
 interface GeminiReply {
@@ -187,8 +209,10 @@ export async function directSynthesize(
 
       last = response;
       // A 4xx will not become a 200 on a second attempt, and a 429 is a quota
-      // answer rather than a blip. Identical policy to the server path.
-      if (response.status < 500 || response.status === 429) return response;
+      // answer rather than a blip. Identical policy to the server path, read
+      // off the upstream status so the UI remap cannot turn a 400 into a retry.
+      const upstream = retryableStatus(response);
+      if (upstream < 500 || upstream === 429) return response;
     }
 
     if (last.status !== 200) return last;
@@ -322,7 +346,8 @@ async function transcribeClean(
     }
 
     last = response;
-    if (response.status < 500 || response.status === 429) break;
+    const upstream = retryableStatus(response);
+    if (upstream < 500 || upstream === 429) break;
   }
 
   if (last && !last.ok && last.status !== 0) return { ok: false, response: last };

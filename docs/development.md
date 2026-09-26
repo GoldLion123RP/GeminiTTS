@@ -19,6 +19,7 @@ Detail behind [`AGENTS.md`](../AGENTS.md). Read on demand.
 | `bunx astro --help` | Astro CLI reference |
 | `bun run docs:sync` | Regenerate `docs/README.md` and `docs/archive/README.md` |
 | `bun run check:contrast` | Recompute the WCAG contrast of every text token on every surface, both themes |
+| `bun run check:secrets` | Scan `dist/` and the client source for key material; run after `bun run build` |
 
 `bun run build` and `bun run check` are the two gates. Run both before opening a
 pull request. There is no CI enforcing them yet.
@@ -95,6 +96,53 @@ $r = Invoke-WebRequest http://localhost:4321/ -UseBasicParsing
 A `dark:` class in the served HTML means the no-flash script failed and the
 page will flash light before correcting itself.
 
+## Bring-your-own key (BYOK)
+
+A user can paste their own Gemini key, which then travels from the browser
+straight to Google. Three rules keep that honest, and all three are enforced in
+code rather than in copy:
+
+| Rule | Where it lives | Enforced by |
+| :--- | :--- | :--- |
+| Session-only by default; `localStorage` is opt-in | `src/lib/client/keystore.ts` | `src/lib/client/provider.test.ts` |
+| The key is only ever sent to `generativelanguage.googleapis.com` | `src/lib/client/gemini-direct.ts` | `bun run check:secrets` + routing tests |
+| Live transcription and document extraction never see it | `ROUTES` in `src/lib/client/provider.ts` | routing tests |
+
+The routing table, not a boolean, is what makes the third rule survive. A
+`'server' | 'byok'` union would have pushed `live-token` and `extract` down the
+browser path under BYOK — and `live-token` authenticates only through a query
+parameter (measured in the plan's Phase 0.2), so that "simplification" would
+have put the key in browser history.
+
+### `bun run check:secrets`
+
+```
+bun run build
+bun run check:secrets
+```
+
+It scans `dist/` for a key *shape* (`AIza…`), then asserts in the source that
+only `gemini-direct.ts` attaches `x-goog-api-key`, that its host is Google, and
+that the key is never interpolated into a URL. Matches are reported as
+`file:line`, never as content, so the gate cannot leak the thing it is looking
+for.
+
+**It carries a positive control, and that is the point.** This repo has already
+produced a false pass twice from `Select-String -Path "dist\**"` matching 1 of
+45 files. A scan that reads nothing looks exactly like a clean bill of health,
+so the script prints how many files it read, fails on a zero-file scan, and
+first plants a synthetic key in a temp file that the detector *must* find. If
+the control is missed, the run fails no matter what `dist/` contains.
+
+Comments and UI copy are stripped before the source checks. The first version
+failed on two false positives — `ByokSettings.astro` renders `x-goog-api-key`
+inside a `<code>` element as part of the user's security statement, and
+`gemini-direct.ts` names `?key=` in the comment explaining why it never does
+that. A gate that cries wolf on its own documentation gets ignored.
+
+What it cannot prove: what a browser does at runtime. The "never reaches our
+origin" claim rests on the routing tests, which capture the actual `fetch` URLs.
+
 ## Project structure
 
 ```text
@@ -105,6 +153,7 @@ page will flash light before correcting itself.
 │   ├── components/             # reusable .astro components
 │   ├── layouts/                # page shells — Layout.astro imports global.css
 │   ├── pages/                  # file-based routing; api/*.ts are server-only
+│   ├── lib/client/             # browser-only: provider seam, keystore, BYOK transport
 │   ├── styles/global.css       # Tailwind entry — @import 'tailwindcss'
 │   └── env.d.ts                # typed GEMINI_API_KEY declaration
 ├── docs/                       # documentation (see docs/README.md)
@@ -124,10 +173,15 @@ Output mode is `server` on `@astrojs/node` (`mode: 'standalone'`), so routes
 render on demand unless a page opts out with `prerender = true`. Build output
 splits into `dist/client/` and `dist/server/`.
 
-Server output exists for one reason: the Gemini calls must never run in the
-browser, so `GEMINI_API_KEY` can stay a server-only secret. Anything touching
-the key stays server-side. API endpoints live at `src/pages/api/*.ts` and are
-server-only.
+Server output exists for one reason: **our** `GEMINI_API_KEY` must never run in
+the browser. Anything touching that key stays server-side; API endpoints live at
+`src/pages/api/*.ts` and are server-only.
+
+Phase 4 added a deliberate exception, and the distinction matters: a Gemini call
+*does* now run in the browser when the user supplies their own key, and it
+carries their credential, not ours. The server key is untouched by that path —
+which is the whole point of the mode, and why `src/lib/client/` is split out
+from the rest of `src/lib/`.
 
 ### The Live socket URL is served, not built client-side
 
@@ -147,12 +201,23 @@ parameter, and the real `GEMINI_API_KEY` must never appear in a response body
 or in anything under `dist/client/`. Both are asserted by
 `src/lib/gemini/live-token.test.ts` and `src/pages/api/endpoints.test.ts`.
 
-Verify after any change here — the `generativelanguage` string should **not**
-appear anywhere under `dist/client/`:
+**Updated in Phase 4:** the old verification here — "`generativelanguage` should
+not appear anywhere under `dist/client/`" — is no longer true, and the check was
+removed rather than left to fail. BYOK puts a browser-side Gemini transport in
+the client bundle, so that string now appears by design in
+`src/lib/client/gemini-direct.ts`'s compiled output. A grep that is known to
+fail teaches people to ignore greps.
 
-```powershell
-Select-String -Path "dist\client\**" -Pattern "generativelanguage" -SimpleMatch -List
-```
+What still holds, and what `bun run check:secrets` now enforces:
+
+- no `AIza…`-shaped literal anywhere in `dist/`;
+- `x-goog-api-key` is attached in exactly one module, and its host is Google;
+- the key is never interpolated into a URL, which is the one thing the Live
+  socket needs and the one thing a `fetch` call must never do.
+
+The Live socket stays server-issued for the same reason: a browser cannot send a
+request header on a WebSocket, so a browser-authenticated Live connection would
+have to put the key in the query string.
 
 ## The standalone server does not load `.env` ⚠️
 

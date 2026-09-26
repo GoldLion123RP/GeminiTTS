@@ -93,6 +93,7 @@ whether the built server can see it.
 | `bun run start` | Run the built server, **loading `.env`** (see the warning below) |
 | `bun run smoke` | Start the built server and check the page, both tools on their own routes, and key visibility |
 | `bun test` | Unit tests (`bun test` is built in — no test framework dependency) |
+| `bun run check:secrets` | Scan `dist/` and the client source for key material (run after `build`) |
 | `bunx astro --help` | Astro CLI reference |
 
 `bun run check` and `bun run build` are the two gates. Run both before opening a
