@@ -51,6 +51,12 @@ jobs:
       - name: Type check
         run: bun run check
 
+      # The panel is a DOM script, so `astro check` and `bun test` cannot see it.
+      # This is the only thing standing between a user and a permanently
+      # disabled Generate button, so it runs in CI rather than by hand.
+      - name: Cost gate
+        run: bun run check:panel
+
       - uses: actions/configure-pages@v5
 
       - uses: actions/upload-pages-artifact@v3

@@ -103,6 +103,7 @@ whether the built server can see it.
 | `bun run check:secrets` | Scan `dist/` and the client source for key material (run after `build`) |
 | `bun run check:routes` | Assert no test file under `src/pages/` ships as a live route (run after `build`) |
 | `bun run check:shell` | Assert the shell contract: no-flash bootstrap ordering, skip link, 640px nav switch |
+| `bun run check:panel` | Run the shipped TTS bundle against a DOM stub and assert the cost gate opens for typed *and* restored text (run after `build`) |
 | `bun run verify:stt` | One live recording that settles whether Smart mode is honoured or silently downgraded to Verbatim. **Never executed** — it has no output because no credential was available when it was written. Costs two requests of the free tier. |
 | `bunx astro --help` | Astro CLI reference |
 

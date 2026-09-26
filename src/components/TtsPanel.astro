@@ -422,6 +422,40 @@ const ACCEPT = '.txt,.md,.pdf,.docx';
 
 	textarea.addEventListener('input', scheduleEstimate);
 
+	/**
+	 * Re-estimate when the textarea's value changed *without* an `input` event.
+	 *
+	 * The gate is the only thing standing between the user and a paid request,
+	 * so it must never be stuck shut with no way out — and three ordinary
+	 * browser behaviours change the textarea without firing `input`:
+	 *
+	 *   1. form restoration on reload and on back/forward navigation, which
+	 *      repopulates a textarea silently;
+	 *   2. a paste or drop that lands before this module has executed;
+	 *   3. some mobile clipboard managers and autofill paths, which are
+	 *      inconsistent about the event they dispatch.
+	 *
+	 * All three end in the same place: text on screen, `estimatedFor` still
+	 * null, and a permanently disabled Generate with no indication of why.
+	 * `resyncEstimate` is the cheap reconciliation — it does nothing unless the
+	 * visible text has actually diverged from what the estimate describes, so
+	 * it cannot re-quote on every focus change.
+	 */
+	function resyncEstimate(): void {
+		const text = textarea.value.trim();
+		if (text.length === 0 || text === estimatedFor) return;
+		scheduleEstimate();
+	}
+
+	// `paste` fires *before* the value is committed, so the read has to wait a
+	// tick. Scheduling on the event alone would compare the pre-paste value and
+	// decide there was nothing to do.
+	textarea.addEventListener('paste', () => window.setTimeout(resyncEstimate, 0));
+	textarea.addEventListener('change', resyncEstimate);
+
+	// The restore case above: this runs on every load, not only after an edit.
+	resyncEstimate();
+
 	// --- 5.1 file upload --------------------------------------------------
 
 	/**

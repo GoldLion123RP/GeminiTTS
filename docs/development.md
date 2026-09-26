@@ -23,6 +23,7 @@ Detail behind [`AGENTS.md`](../AGENTS.md). Read on demand.
 | `bun run check:secrets` | Scan `dist/` and the client source for key material; run after `bun run build` |
 | `bun run check:routes` | Assert no test file under `src/pages/` is shipped as a live route; run after `bun run build` |
 | `bun run check:shell` | Assert the shell contract: the no-flash bootstrap ordering, the skip link, and the 640px nav switch (plan 6.2–6.4, structural half). Proven able to fail; has not yet caught a real defect |
+| `bun run check:panel` | Run the **shipped** TtsPanel bundle against a DOM stub and assert the cost gate opens when text is typed and when text is already in the box on load. **Caught a real defect** — see [The cost gate and the listener that was not there yet](#the-cost-gate-and-the-listener-that-was-not-there-yet) |
 | `bun run verify:stt` | One live STT recording that settles whether Smart mode is honoured or silently downgraded to Verbatim. **Never executed** — see [Verifying STT end to end](#verifying-stt-end-to-end) |
 
 `bun run build` and `bun run check` are the two gates. Run both before opening a
@@ -208,6 +209,47 @@ claim, and the claim itself is asserted where it is provable: `smoke.mjs` checks
 the byte order of the **served** HTML — the inline bootstrap sits inside `<head>`,
 before `<body>` and before the stylesheet — which makes a light first paint
 impossible by construction rather than by observation.
+
+### The cost gate and the listener that was not there yet
+
+`bun run check:panel`
+
+The TTS panel enables Generate only once an estimate exists for the exact text in
+the box. The estimate is computed **in the browser** — `request('estimate')` is
+answered locally by `estimateText`, never by the network — so it cannot fail for
+connectivity reasons. It can only fail if the `input` listener was never
+attached, or was attached after the text had already arrived.
+
+Three ordinary browser behaviours change a textarea without firing `input`:
+form restoration on reload and on back/forward, a paste that lands before the
+module executes, and some mobile clipboard and autofill paths. All three end in
+the same state — text on screen, `estimatedFor` still `null`, Generate
+permanently disabled, and a note telling the user an estimate "must load" with
+no way to make it. That shipped: it was reported as "it is not working" from a
+phone, with a screenshot showing a full paragraph of text and a dead button.
+
+**Nothing in the suite could see it.** `astro check` reads types, `bun test`
+covers pure functions, and `check:shell` reads source — and the source was
+correct. The defect was in *when* the module ran relative to the user's paste,
+which is a property of the built artifact and only of the built artifact.
+
+`check:panel` therefore imports the shipped chunk from `dist/client/_astro/`
+against a small DOM stub and drives it two ways: text typed after load, and text
+already present when the module executes. The second is the regression.
+
+Its positive control is a **real build** of the panel with `resyncEstimate()`
+and its two listeners removed — the pre-fix source. That build is run, asserted
+to fail, and the original file is restored in a `finally`, followed by a rebuild
+so `dist/` matches the source again. Verified red before the fix:
+
+```
+FAIL  Generate is disabled when the textarea already has text on load. The panel
+      never reconciles text that arrived without an `input` event (form restore,
+      early paste, autofill). Note reads: An estimate must load before generating
+```
+
+It runs in `.github/workflows/pages.yml`, because a browser-only regression that
+ships once should not be able to ship twice on a machine nobody is watching.
 
 ### `bun run verify:stt`
 

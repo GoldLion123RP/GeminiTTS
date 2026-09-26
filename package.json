@@ -15,6 +15,7 @@
     "check:secrets": "node scripts/check-secrets.mjs",
     "check:routes": "node scripts/check-routes.mjs",
     "check:shell": "node scripts/check-shell.mjs",
+    "check:panel": "node scripts/check-panel.mjs",
     "verify:stt": "node scripts/verify-stt.mjs",
     "docs:sync": "node scripts/sync-docs.mjs",
     "astro": "astro",
