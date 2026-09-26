@@ -1,0 +1,39 @@
+---
+/**
+ * Phase 3.1 — `/speech-to-text` owns the STT tool.
+ *
+ * The panel that used to sit in a two-up grid on `/` lives here alone. A tool
+ * page is a full-width single column, not a card in a grid: at 1200px the old
+ * grid gave the tool half the content width (about 570px), which is a
+ * two-column layout for a tool that is one column of controls and one column
+ * of transcript. The panel was never designed to be that narrow, so widening
+ * it is a consequence of the split, not a redesign.
+ *
+ * The band above it is the reduced `Hero` (`compact`) — see the note on that
+ * prop for why 128px is wrong directly above a working control.
+ *
+ * The lede is a reword, not a copy: `/`'s hero has to describe the whole
+ * product across two tools, so its copy is split. Each tool page gets the
+ * sentence that belongs to that tool alone.
+ */
+import Hero from '../components/Hero.astro';
+import Layout from '../layouts/Layout.astro';
+import SttPanel from '../components/SttPanel.astro';
+---
+
+<Layout
+	title="Speech to text — GeminiTTS"
+	description="Record speech in English, বাংলা or हिन्दी and get clean structured writing back, with a live transcript and a Smart/Verbatim choice."
+>
+	<Hero
+		compact
+		eyebrow="Gemini · speech → text"
+		title="Say it. Write it."
+		lede="Record speech and get clean, structured writing. A live transcript streams in as you talk, and Smart mode turns rough notes into prose while Verbatim keeps your own words."
+	/>
+
+	{/* `id="main"` is the skip link's target, mounted by SiteHeader. */}
+	<main id="main" class="container-page pb-24">
+		<SttPanel />
+	</main>
+</Layout>

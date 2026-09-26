@@ -83,9 +83,28 @@ describe('NAV_ITEMS', () => {
 		]);
 	});
 
+	// Phase 3 flipped the two staging flags. This is the assertion that would
+	// have failed had the pages landed without the flags being flipped — the
+	// header would have kept rendering a single link while three routes
+	// existed. Asserted as a count so a future route addition is a deliberate
+	// edit here rather than a silent one.
+	it('renders all three routes now that the pages exist', () => {
+		expect(visibleNavItems()).toHaveLength(3);
+	});
+
 	it('gives every item a non-empty label', () => {
 		for (const item of NAV_ITEMS) {
 			expect(item.label.length).toBeGreaterThan(0);
 		}
+	});
+
+	// `aria-current="page"` is a single-value attribute. Two links carrying it
+	// simultaneously is not "extra emphasis", it is two controls each
+	// announcing themselves as the current page to a screen reader. The
+	// wordmark and the "Home" nav item are the pair that collides here, and
+	// the fix belongs in the header rather than in this file.
+	it('has exactly one distinct href per entry', () => {
+		const hrefs = NAV_ITEMS.map((item) => item.href);
+		expect(new Set(hrefs).size).toBe(hrefs.length);
 	});
 });

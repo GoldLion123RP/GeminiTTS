@@ -99,14 +99,36 @@ try {
 		const html = await page.text();
 		console.log(`✓ page          ${page.status} (${html.length} bytes)`);
 
-		// The panel is the thing we actually built, so its presence is the
+		// The panels are the thing we actually built, so their presence is the
 		// cheapest proof that the served HTML is the current build and not a
 		// stale dist/ left over from an earlier phase.
-		const hasStt = html.includes('id="stt"');
-		const hasTts = html.includes('id="tts"');
-		console.log(`${hasStt ? '✓' : '✗'} STT panel    ${hasStt ? 'present' : 'MISSING'}`);
-		console.log(`${hasTts ? '✓' : '✗'} TTS panel    ${hasTts ? 'present' : 'MISSING'}`);
-		if (!hasStt || !hasTts) exitCode = 1;
+		//
+		// PHASE 3 CHANGE: the panels moved off `/` and onto their own routes,
+		// so this no longer looks for them on the landing page. Instead each
+		// tool is checked on the route that now owns it, and `/` is checked
+		// for the ABSENCE of both. That negative check is the part worth
+		// having: it is what catches a leftover import in `index.astro` that
+		// would silently put both full tools back on the landing page.
+		const routes = [
+			{ path: '/speech-to-text', marker: 'id="stt"', label: 'STT panel' },
+			{ path: '/text-to-speech', marker: 'id="tts"', label: 'TTS panel' },
+		];
+
+		for (const route of routes) {
+			const response = await fetch(`http://${HOST}:${PORT}${route.path}`);
+			const body = await response.text();
+			const present = body.includes(route.marker);
+			console.log(
+				`${present ? '✓' : '✗'} ${route.label.padEnd(12)} ${route.path} → ${present ? 'present' : `MISSING (${response.status})`}`,
+			);
+			if (!present) exitCode = 1;
+		}
+
+		const landingIsClean = !html.includes('id="stt"') && !html.includes('id="tts"');
+		console.log(
+			`${landingIsClean ? '✓' : '✗'} landing      ${landingIsClean ? 'no tool panels' : 'STILL MOUNTING A TOOL PANEL'}`,
+		);
+		if (!landingIsClean) exitCode = 1;
 
 		// The endpoint that reads the key. This is the check that would have
 		// caught the Phase 6 confusion in one command.

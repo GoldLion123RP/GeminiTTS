@@ -11,7 +11,10 @@
  * possible place to have one. So the links are declared now, carry their final
  * labels and order, and render as soon as their page lands.
  *
- * Phase 3 flips the two flags. No header edit is needed there.
+ * As of Phase 3 all three flags are `true`. The field is KEPT rather than
+ * deleted: it is the mechanism that makes "never link a route without a page"
+ * checkable, and `nav.test.ts` asserts the relationship rather than the
+ * current values — so it keeps holding the next time a route is staged.
  */
 export interface NavItem {
 	/** Route path, absolute. */
@@ -27,8 +30,8 @@ export interface NavItem {
 
 export const NAV_ITEMS: readonly NavItem[] = [
 	{ href: '/', label: 'Home', implemented: true },
-	{ href: '/speech-to-text', label: 'Speech to text', implemented: false },
-	{ href: '/text-to-speech', label: 'Text to speech', implemented: false },
+	{ href: '/speech-to-text', label: 'Speech to text', implemented: true },
+	{ href: '/text-to-speech', label: 'Text to speech', implemented: true },
 ] as const;
 
 /** The nav entries that currently have a page behind them. */

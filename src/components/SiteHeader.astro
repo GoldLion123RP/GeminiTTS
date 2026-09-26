@@ -50,11 +50,20 @@ const items = visibleNavItems();
 		{/* Wordmark. Black, per `nav-bar`: "Holds the black wordmark". It is a
 		    link home, so the chrome's own primary target is reachable from
 		    every route. `tracking-normal` is the Indic-safe base; `latin`
-		    restores the design-system tracking, per the same ruling as Hero. */}
+		    restores the design-system tracking, per the same ruling as Hero.
+
+		    PHASE 3 FIX: `aria-current` was removed here. With only one route
+		    this was invisible, but now that the "Home" nav item exists, `/`
+		    matched BOTH the wordmark and the Home link and put
+		    `aria-current="page"` on two controls at once. It is a single-value
+		    attribute: it does not read as "these two both point at the current
+		    page", it announces the current page twice and leaves a screen
+		    reader user with no way to tell which mark is the real one. The
+		    wordmark is a brand link that happens to point home; the nav item is
+		    the thing that represents a location, so it owns the attribute. */}
 		<a
 			href="/"
 			class="text-base leading-5 font-semibold tracking-normal text-ink latin:tracking-[-0.04em]"
-			aria-current={isActive(pathname, '/') ? 'page' : undefined}
 		>
 			GeminiTTS
 		</a>

@@ -32,7 +32,7 @@ const LIGHT = {
 	'on-primary': '#ffffff',
 	body: '#4d4d4d',
 	mute: '#6b6b6b',
-	faint: '#a1a1a1',
+	faint: '#727272',
 	link: '#006ce5',
 	'link-deep': '#0761d1',
 	error: '#ee0000',

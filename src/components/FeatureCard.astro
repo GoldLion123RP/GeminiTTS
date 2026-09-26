@@ -1,0 +1,67 @@
+---
+/**
+ * Feature card — DESIGN.md `components.feature-card`.
+ *
+ *   background {colors.canvas-elevated}, text {colors.ink},
+ *   border 1px {colors.hairline}, type {typography.body-md},
+ *   rounded {rounded.md} (12px), padding {spacing.lg} (24px)
+ *
+ * Also carries the `mono-eyebrow` label that DESIGN.md prescribes for
+ * "spec-sheet headers" (Geist Mono, 12/16, uppercase, {colors.mute}), and the
+ * `{typography.heading-md}` (20px/28) card heading.
+ *
+ * Kept as a component rather than inlined in `index.astro` because the plan's
+ * grid is a grid of *identical* cards, and a repeated card is exactly the case
+ * where a single source of truth pays: a later change to the card chrome
+ * should be one edit, not a find-and-replace across however many copies the
+ * grid grew to.
+ *
+ * `headingTag` exists because the card is not always an `<h2>`. On a page whose
+ * `<h1>` is the only heading above it, the card title is an `<h2>`; nesting a
+ * `<h2>` inside another `<h2>`'s section is fine, but a grid whose cards are
+ * `<h3>` reads correctly under a section `<h2>` and skips nothing. The default
+ * is `<h2>` because the landing grid sits directly under the `<h1>`.
+ */
+interface Props {
+	/** The mono eyebrow above the title. */
+	eyebrow?: string;
+	/** Card heading text. */
+	title: string;
+	/** Body copy. */
+	body?: string;
+	/** Heading level, so the document outline stays correct at the call site. */
+	headingTag?: 'h2' | 'h3';
+}
+
+const { eyebrow, title, body, headingTag = 'h2' } = Astro.props;
+
+// Astro renders a dynamic tag from a variable, so the heading level is a
+// variable rather than a string prop — `set:html` is not involved and the
+// content stays escaped.
+const Heading = headingTag;
+---
+
+<div
+	class:list={[
+		'rounded-card border border-hairline bg-elevated p-6 shadow-whisper',
+		'h-full',
+	]}
+>
+	{
+		eyebrow && (
+			<p class="font-mono text-xs leading-4 font-medium tracking-normal text-mute uppercase">
+				{eyebrow}
+			</p>
+		)
+	}
+	<Heading
+		class:list={[
+			'text-xl leading-7 font-semibold tracking-normal text-ink latin:tracking-[-0.02em]',
+			eyebrow ? 'mt-4' : '',
+		]}
+	>
+		{title}
+	</Heading>
+	{body && <p class="mt-3 text-sm leading-5 text-body">{body}</p>}
+	<slot />
+</div>

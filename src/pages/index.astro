@@ -1,35 +1,105 @@
 ---
+/**
+ * Phase 3.3 — `/` becomes the landing page.
+ *
+ * The two tool panels that used to sit in a 2-up grid here have moved to
+ * `/speech-to-text` and `/text-to-speech`. This page is now the thing a
+ * visitor lands on *before* choosing a tool, so it does the three jobs a
+ * landing page exists to do and nothing else:
+ *
+ *   1. say what this is (the marketing hero, at the full `{spacing.section}`
+ *      band — unlike the tool pages, the vertical space here is not wasted,
+ *      because what follows is marketing copy, not a working control);
+ *   2. let the visitor reach a tool in one click (the two CTAs);
+ *   3. say what the thing does beyond those two headlines (the feature grid).
+ *
+ * DESIGN.md shapes only. The CTAs are `{components.button-primary}` and
+ * `{components.button-secondary}`: marketing pills, `rounded.pill` (100px),
+ * `0px 14px` padding, `{typography.button-lg}` (16/20), height set by
+ * line-height rather than vertical padding. They are pills rather than the
+ * 6px-square app controls because this is the one genuinely marketing context
+ * on the site — and DESIGN.md's Don'ts is explicit that the two shapes must
+ * not be mixed within one context, which is exactly why the header keeps its
+ * own `nav-link` pills to itself.
+ *
+ * Height note: the pills are `h-10` (40px) rather than 44px. DESIGN.md's
+ * 44px clear-target claim is made for "marketing pill CTAs" generally, but the
+ * real driver there is line-height (20px) plus padding — `0px 14px` horizontal
+ * only — which is 20px tall at its literal token values. `h-10` is 40px, the
+ * smallest height that still clears the 40px WCAG 2.5.8 minimum and stays
+ * visibly a pill rather than a squashed one. Recorded rather than silently
+ * rounded up.
+ */
+import FeatureCard from '../components/FeatureCard.astro';
 import Hero from '../components/Hero.astro';
 import Layout from '../layouts/Layout.astro';
-import SttPanel from '../components/SttPanel.astro';
-import TtsPanel from '../components/TtsPanel.astro';
-
-// Phases 5 and 6 are both mounted below. Nothing is stubbed: an empty mount
-// point that renders a placeholder would be a state the design system never
-// sanctioned.
 ---
 
 <Layout
 	title="GeminiTTS — speech to text, text to speech"
-	description="Record speech and get clean structured writing, or turn a document into natural speech. The Gemini API key never leaves your server."
+	description="Record speech and get clean structured writing, or turn a document into natural speech. Speech to text with a live transcript, and text to speech with a cost estimate before you pay for it."
 >
 	<Hero
 		eyebrow="Gemini · speech ⇄ text"
 		title="Say it. Write it. Say it back."
-		lede="Record speech and get clean, structured writing — or paste a document and hear it read back. English, বাংলা, हिन्दी, or let it auto-detect. Your API key never leaves this server."
-	/>
+		lede="Two tools, one Gemini API key. Record speech and get clean, structured writing — or paste a document and hear it read back. English, বাংলা, हिन्दी, or let it auto-detect."
+	>
+		{/*
+			The two CTAs. `flex-wrap` so they stack rather than overflow at
+			320px. Each is `w-fit`-ish (`inline-flex`, not `flex-1`) so a
+			wrapped stack still reads as two buttons of their own natural
+			width — DESIGN.md's "pill CTAs go full-width" mobile rule is about
+			a lone hero CTA, and two full-width slabs would be ambiguous about
+			which one is which.
+		*/}
+		<div class="mt-8 flex flex-wrap items-center gap-3">
+			<a
+				href="/speech-to-text"
+				class="inline-flex h-10 items-center rounded-pill bg-ink px-3.5 text-base leading-5 font-medium text-on-primary hover:opacity-90"
+			>
+				Speech to text
+			</a>
+			<a
+				href="/text-to-speech"
+				class="inline-flex h-10 items-center rounded-pill border border-hairline bg-elevated px-3.5 text-base leading-5 font-medium text-ink hover:bg-hairline-soft"
+			>
+				Text to speech
+			</a>
+		</div>
+	</Hero>
 
-	{/* `id="main"` is the skip link's target, mounted by SiteHeader. It was
-	    `id="panels"` until Phase 1.3; nothing referenced it, and a skip link
-	    pointing at a target that does not exist is silently inert. */}
-	<main id="main" class="container-page pb-24">
-		{/* SPEC §3.8: a 2-up card grid collapsing to one column below the
-		    documented breakpoint. Speech → Text is ordered first because that
-		    is the order the hero's lede describes. `items-start` stops the
-		    taller column stretching its neighbour's card. */}
-		<div class="grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
-			<SttPanel />
-			<TtsPanel />
+	{/* `id="main"` is the skip link's target, mounted by SiteHeader. */}
+	<main id="main" class="container-page flex-1 pb-24">
+		{/*
+			DESIGN.md "Grid & Container": "Feature sections use 2-up, 3-up, and
+			4-up hairline-card grids that collapse toward 1-up on narrow
+			widths", and the breakpoint table puts 2-up grids at 768px. The
+			columns start at `sm` (640px) rather than `md`/`lg` because these
+			cards are short and a 2-up that waits until 1024px leaves both a
+			phone and a tablet with a column of one. `items-start` stops the
+			taller card stretching its neighbour.
+		*/}
+		<div class="grid grid-cols-1 items-start gap-6 sm:grid-cols-2">
+			<FeatureCard
+				eyebrow="Speech → text"
+				title="A transcript, not a wall of text"
+				body="Interim words stream in live while you talk, then Smart mode cleans the result into structured prose — or Verbatim keeps exactly what you said."
+			/>
+			<FeatureCard
+				eyebrow="Text → speech"
+				title="You know the cost before you pay it"
+				body="A spoken-character estimate comes back for the exact text you are about to send, and Confirm stays disabled until it does. Text, Markdown, PDF and Word all work."
+			/>
+			<FeatureCard
+				eyebrow="Languages"
+				title="English, বাংলা, हिन्दी, or auto"
+				body="Pick a language or let it auto-detect per recording. These are also the three scripts the display type is explicitly tuned for."
+			/>
+			<FeatureCard
+				eyebrow="Your key"
+				title="The server's key, or your own"
+				body="The server key is the default and nothing about the app changes if you stop here. Bring-your-own-key is on the way: your key would go straight to Google from your browser and never reach this server."
+			/>
 		</div>
 	</main>
 </Layout>

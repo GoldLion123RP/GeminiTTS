@@ -2,8 +2,10 @@
 
 An Astro + Tailwind CSS v4 front end for GeminiTTS, built on the Geist design system.
 
-> **Status: `alpha`.** Both panels are built and the page is served from the
-> Astro node adapter. **Speech → Text** records from the microphone over two
+> **Status: `alpha`.** Both tools are built, each on its own route
+> (`/speech-to-text` and `/text-to-speech`), behind a landing page at `/`, and
+> served from the Astro node adapter. **Speech → Text** records from the
+> microphone over two
 > concurrent paths — an `AudioWorklet` streaming 16 kHz PCM to the Gemini Live
 > API for a provisional draft, and a `MediaRecorder` webm blob that becomes the
 > authoritative cleaned and structured transcript on stop. **Text → Speech**
@@ -89,7 +91,7 @@ whether the built server can see it.
 | `bun run preview` | Serve the production build locally |
 | `bun run check` | Type check — `astro check`, must report zero errors |
 | `bun run start` | Run the built server, **loading `.env`** (see the warning below) |
-| `bun run smoke` | Start the built server and check the page, both panels, and key visibility |
+| `bun run smoke` | Start the built server and check the page, both tools on their own routes, and key visibility |
 | `bun test` | Unit tests (`bun test` is built in — no test framework dependency) |
 | `bunx astro --help` | Astro CLI reference |
 
@@ -122,7 +124,7 @@ pull request; neither is enforced in CI yet because there is no CI.
 │   ├── assets/                 # images imported by components
 │   ├── components/             # reusable .astro components
 │   ├── layouts/                # page shells (Layout.astro imports global.css)
-│   ├── pages/                  # file-based routing — index.astro is the only route
+│   ├── pages/                  # file-based routing — /, /speech-to-text, /text-to-speech
 │   ├── styles/
 │   │   └── global.css          # Tailwind entry point — @import 'tailwindcss'
 │   └── env.d.ts                # typed GEMINI_API_KEY declaration
@@ -141,7 +143,20 @@ pull request; neither is enforced in CI yet because there is no CI.
 
 ### Routes and rendering
 
-Routing is file-based under `src/pages/`; `src/pages/index.astro` serves `/`.
+Routing is file-based under `src/pages/`. There are three pages:
+
+| Route | File | What it is |
+| --- | --- | --- |
+| `/` | `index.astro` | Landing page — hero, the two tool CTAs, and a feature grid |
+| `/speech-to-text` | `speech-to-text.astro` | The STT tool (`SttPanel`) |
+| `/text-to-speech` | `text-to-speech.astro` | The TTS tool (`TtsPanel`) |
+
+The route list itself lives in `src/lib/nav.ts` and drives both the header and
+the footer, so the two can never drift apart or link a page that does not exist.
+Each tool page uses the reduced `Hero` band (`compact`) — the full
+`{spacing.section}` band is a marketing measure and would push the tool below
+the fold.
+
 Output mode is `server`, so routes are rendered on demand by the Node adapter
 unless a page opts out with `prerender = true`. There is no `public/` HTML and no
 SPA fallback.

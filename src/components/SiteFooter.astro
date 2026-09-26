@@ -11,16 +11,44 @@
  * extraction — the plan is explicit that a move which also changes pixels
  * cannot be reviewed, because the two changes get conflated and a pixel
  * regression has no way to be attributed. The link column DESIGN.md mentions
- * ("Multi-column link groups under the wordmark") is deferred to Phase 3,
- * when the routes it would point at actually exist.
+ * ("Multi-column link groups under the wordmark") arrived in Phase 3, when the
+ * routes it points at finally existed.
+ *
+ * The column renders from `visibleNavItems()`, the same list the header uses,
+ * so the footer can never link a route the header does not — and neither can
+ * link a route that has no page behind it. The wordmark line, the models line
+ * and the type are unchanged from the original inlined footer.
  */
+import { visibleNavItems } from '../lib/nav';
+
+const items = visibleNavItems();
 ---
 
 <footer class="border-t border-hairline py-16">
-	<div class="container-page flex flex-col gap-8 sm:flex-row sm:items-baseline sm:justify-between">
+	<div
+		class="container-page flex flex-col gap-8 sm:flex-row sm:items-baseline sm:justify-between"
+	>
 		<p class="text-sm leading-5 text-body">
 			GeminiTTS — <span class="text-ink">speech to text, text to speech</span>
 		</p>
+
+		{/* The link column. `nav-link` pills, matching the header's nav row —
+		    same component, same shape, so the two do not read as two different
+		    kinds of link. DESIGN.md Don'ts: don't mix button shapes within one
+		    context. */}
+		<nav aria-label="Footer" class="flex flex-wrap items-center gap-1">
+			{
+				items.map((item) => (
+					<a
+						href={item.href}
+						class="px-2 py-1 text-sm leading-5 text-body rounded-full hover:text-ink"
+					>
+						{item.label}
+					</a>
+				))
+			}
+		</nav>
+
 		<p class="font-mono text-xs leading-4 text-mute">
 			gemini-3.5-transcribe · gemini-3.8-flash-lite-tts
 		</p>

@@ -1,0 +1,33 @@
+---
+/**
+ * Phase 3.2 — `/text-to-speech` owns the TTS tool.
+ *
+ * The sibling of `/speech-to-text`, and for the same reason: the panel gets
+ * the full 1200px content width instead of half a two-up grid. TTS is the
+ * wider of the two tools — a document textarea and a preview player want
+ * room — so it gains the most from the split.
+ *
+ * The cost gate inside the panel (Confirm stays disabled until an estimate
+ * comes back) is unchanged. This move is a relocation, not a rewrite.
+ */
+import Hero from '../components/Hero.astro';
+import Layout from '../layouts/Layout.astro';
+import TtsPanel from '../components/TtsPanel.astro';
+---
+
+<Layout
+	title="Text to speech — GeminiTTS"
+	description="Paste or upload a document, check the cost, and generate natural speech in a Gemini voice you can preview and download as a WAV."
+>
+	<Hero
+		compact
+		eyebrow="Gemini · text → speech"
+		title="Write it. Say it back."
+		lede="Paste or upload a document, check the cost, then generate a WAV you can preview and download. Text, Markdown, PDF and Word are all accepted."
+	/>
+
+	{/* `id="main"` is the skip link's target, mounted by SiteHeader. */}
+	<main id="main" class="container-page pb-24">
+		<TtsPanel />
+	</main>
+</Layout>

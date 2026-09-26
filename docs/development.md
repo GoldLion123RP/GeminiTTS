@@ -13,7 +13,7 @@ Detail behind [`AGENTS.md`](../AGENTS.md). Read on demand.
 | `bun run dev` | Dev server with HMR at `http://localhost:4321` |
 | `bun run build` | Production build into `./dist/` |
 | `bun run start` | Run the built server, loading `.env` via Node's `--env-file-if-exists` |
-| `bun run smoke` | Start the built server and check the page, both panels, and key visibility |
+| `bun run smoke` | Start the built server and check the page, both tools on their own routes, and key visibility |
 | `bun run preview` | Serve the production build locally |
 | `bun run check` | Type check — `astro check`, must report zero errors |
 | `bunx astro --help` | Astro CLI reference |
@@ -25,6 +25,43 @@ pull request. There is no CI enforcing them yet.
 
 `bun run start` exists because `node dist/server/entry.mjs` **does not load
 `.env`** — see [The standalone server does not load `.env`](#the-standalone-server-does-not-load-env).
+
+## A stale server on 4321 will lie to you
+
+Both `bun run dev` and `bun run start` bind `4321`, and a standalone server
+holds the **old bundle in memory** for its whole lifetime. So a `dist/` built
+ten minutes ago keeps serving pre-build HTML, and a page that no longer exists
+in the source still renders.
+
+This is nastier than a normal stale cache because every gate stays green.
+`build`, `check`, `test` and `smoke` all pass *and* the browser shows the
+previous build — the gates certify the artifact, while the browser is talking
+to a process that loaded the artifact before your last edit. A rebuild does not
+reach it.
+
+**Check what you are actually talking to before trusting any browser result:**
+
+```powershell
+Get-NetTCPConnection -LocalPort 4321 -State Listen |
+  ForEach-Object { (Get-CimInstance Win32_Process -Filter "ProcessId=$($_.OwningProcess)").CommandLine }
+```
+
+`astro dev` in that output means a live dev server. `dist/server/entry.mjs`
+means a standalone server, and its output predates your most recent build —
+stop it (`Stop-Process -Id <pid> -Force`) and restart rather than debugging
+the wrong code.
+
+The same trap applies to `bun run smoke`: it defaults to `PORT=4321`, so with a
+server already listening it will attach to *that* process instead of the
+`dist/server/entry.mjs` it just spawned, and report a pass for code it never
+launched. When anything else holds the port, pass a free one:
+
+```powershell
+$env:PORT=4322; bun run smoke
+```
+
+A green result from a harness that did not run the code is worse than no
+result, because it is trusted.
 
 ## Theming and contrast
 
@@ -161,7 +198,8 @@ bun run smoke
 ```
 
 `scripts/smoke.mjs` starts the built server with the env file loaded, then
-reports the page, both panels, and whether the server can see a key. It prints
+reports the page, both tools on the route that owns each, and whether the server
+can see a key. It prints
 **no key material** — only booleans and the server's own error text.
 
 ## Environment quirk: `bun install` fails on `E:`

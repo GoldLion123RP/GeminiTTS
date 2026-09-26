@@ -22,12 +22,28 @@ interface Props {
 	eyebrow: string;
 	title: string;
 	lede: string;
+	/**
+	 * Phase 3.1/3.2 — a documented departure from `{spacing.section}`.
+	 *
+	 * `{spacing.section}` (128px) is a *marketing* band: it is measured against
+	 * a full viewport of persuasive copy and a pair of CTAs. A tool page has a
+	 * working control directly below the fold, so the same 128px pushes the
+	 * actual tool under the scroll on a laptop and spends a third of the first
+	 * screen on a heading the user did not come for.
+	 *
+	 * So the band is reduced to `{spacing.3xl}` (64px) and the display step
+	 * drops one rung. This is a departure from the frozen token, so it is
+	 * named here rather than smuggled in as a class change. The mesh stays:
+	 * this is still a `hero-band`, and DESIGN.md confines the mesh to the hero
+	 * rather than to *one* hero.
+	 */
+	compact?: boolean;
 }
 
-const { eyebrow, title, lede } = Astro.props;
+const { eyebrow, title, lede, compact = false } = Astro.props;
 ---
 
-<section class="relative isolate overflow-hidden py-32">
+<section class:list={['relative isolate overflow-hidden', compact ? 'py-16' : 'py-32']}>
 	{/* aria-hidden + z-index:-1: the mesh is decoration. DESIGN.md: "Confine
 	    color to the hero mesh gradient" — this element is the only one that
 	    ever gets .hero-mesh. */}
@@ -38,7 +54,12 @@ const { eyebrow, title, lede } = Astro.props;
 			{eyebrow}
 		</p>
 		<h1
-			class="mt-6 max-w-4xl text-4xl leading-none font-semibold tracking-normal text-ink md:text-display-xl lg:text-6xl latin:tracking-[-0.04em]"
+			class:list={[
+				'mt-6 max-w-4xl font-semibold tracking-normal text-ink',
+				compact
+					? 'text-3xl leading-10 md:text-heading-lg lg:text-display-xl latin:tracking-[-0.026em]'
+					: 'text-4xl leading-none md:text-display-xl lg:text-6xl latin:tracking-[-0.04em]',
+			]}
 		>
 			{title}
 		</h1>
