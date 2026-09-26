@@ -1,0 +1,81 @@
+---
+// Phase 6 — the transcript result surface.
+//
+// Kept as its own file, exactly as AudioResult.astro is: this is the only
+// place this markup exists. SttPanel clones the <template> below and fills the
+// data slots, so the structure is authored in Astro (styled and type-checked
+// like everything else) while the values arrive from the response at runtime.
+// Two copies of this markup would drift.
+//
+// DESIGN.md shapes:
+//   `components.feature-card` for the surface — white, 1px hairline,
+//     rounded.md (12px) → rounded-card, body-md type, padding {spacing.lg}
+//     24px. A hairline card inside the panel's own card gives the depth step
+//     the system wants (Level 0 flat → Level 1 whisper) with no second shadow.
+//   `components.button-primary` for Copy — ink fill, white label, rounded.pill
+//     (100px), padding 0 14px, {typography.button-lg} 16/20.
+//   `components.button-ghost-sm` for the raw-transcript disclosure — a 6px
+//     square, hairline, body-md. DESIGN.md: the 6px square and the circular
+//     mic button are never mixed within one context, and the mic lives in the
+//     panel header, not in this result card.
+//   `components.mono-eyebrow` for the "Transcript" label — Geist Mono, 12/16,
+//     uppercase, {colors.mute}.
+//
+// Note what is deliberately absent: the pill shape is used for the single
+// primary action (Copy) and the ghost square for the secondary disclosure.
+// That is the one place both shapes are adjacent, and they are not mixed
+// within a single control — the ordering matches DESIGN.md's own rule that
+// the mic control is circular and panel controls are 6px squares.
+//
+---
+
+<div id="stt-result" class="mt-6"></div>
+
+<template id="stt-transcript">
+	<div class="flex flex-col gap-4 rounded-card border border-hairline bg-elevated p-6 shadow-whisper">
+		<p class="font-mono text-xs leading-4 font-medium tracking-normal text-mute uppercase">
+			Transcript
+		</p>
+
+		<!--
+			The provisional live draft and the authoritative transcript are the
+			same box, in two states. Interim text renders in {colors.mute} so it
+			reads as provisional; the final text renders in {colors.ink}. The
+			distinction is carried by colour and by the live-region label, not
+			by swapping in different elements — which would move focus and lose
+			the announcement.
+		-->
+		<div data-role="surface" aria-live="polite" aria-atomic="true" class="min-h-16">
+			<p data-role="text" class="text-sm leading-5 whitespace-pre-wrap text-mute"></p>
+		</div>
+
+		<p data-role="status" class="hidden text-xs leading-4 text-mute"></p>
+
+		<div class="flex flex-wrap items-center gap-3">
+			<!-- Primary. Only rendered once a transcript actually exists;
+			     SttPanel adds/removes `hidden`. -->
+			<button
+				data-role="copy"
+				type="button"
+				class="hidden cursor-pointer rounded-pill bg-ink px-3.5 py-1 text-base leading-5 font-medium text-on-primary"
+			>
+				Copy transcript
+			</button>
+			<p data-role="copied" class="hidden text-xs leading-4 text-mute">Copied to clipboard</p>
+		</div>
+
+		<!-- 6.6 — the raw-transcript disclosure. A <details> element is used
+		     rather than a scripted toggle: it is keyboard accessible and works
+		     with no JavaScript at all, and the panel's own state is what
+		     needs scripting, not this. -->
+		<details data-role="raw-details" class="hidden rounded-app border border-hairline bg-hairline-soft p-4">
+			<summary class="cursor-pointer text-sm leading-5 font-medium text-ink">
+				Show raw transcript
+			</summary>
+			<p
+				data-role="raw"
+				class="mt-3 text-sm leading-5 whitespace-pre-wrap text-body"
+			></p>
+		</details>
+	</div>
+</template>

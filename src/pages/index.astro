@@ -1,11 +1,12 @@
 ---
 import Hero from '../components/Hero.astro';
 import Layout from '../layouts/Layout.astro';
+import SttPanel from '../components/SttPanel.astro';
 import TtsPanel from '../components/TtsPanel.astro';
 
-// Phase 5 (Text/File → Speech) is mounted below. Phase 6 adds
-// SttPanel.astro alongside it. Nothing is stubbed: an empty mount point that
-// renders a placeholder would be a state the design system never sanctioned.
+// Phases 5 and 6 are both mounted below. Nothing is stubbed: an empty mount
+// point that renders a placeholder would be a state the design system never
+// sanctioned.
 ---
 
 <Layout
@@ -19,8 +20,14 @@ import TtsPanel from '../components/TtsPanel.astro';
 	/>
 
 	<main id="panels" class="container-page pb-24">
-		{/* Phase 6 mounts SttPanel.astro next to this one. */}
-		<TtsPanel />
+		{/* SPEC §3.8: a 2-up card grid collapsing to one column below the
+		    documented breakpoint. Speech → Text is ordered first because that
+		    is the order the hero's lede describes. `items-start` stops the
+		    taller column stretching its neighbour's card. */}
+		<div class="grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
+			<SttPanel />
+			<TtsPanel />
+		</div>
 	</main>
 
 	{/* DESIGN.md `components.footer`: canvas background, top hairline, body

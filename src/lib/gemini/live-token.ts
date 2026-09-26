@@ -69,7 +69,38 @@ export async function mintLiveToken(language: LanguageId = 'auto'): Promise<Live
  * `access_token` query parameter or as an `Authorization: Token <value>` header;
  * browsers cannot set headers on a WebSocket, so the query parameter is the only
  * option here — which is safe precisely because this is the short-lived token.
+ *
+ * The path is `/v1beta/ws/google.ai.BidiGenerateContentConstrained` and the
+ * **only** query parameter is `access_token`. Both facts were re-verified
+ * against the Gemini Live API "get started with raw WebSockets" page
+ * (fetched 2026-09-26) and against Google's own reference client at
+ * `google-gemini/gemini-live-api-examples`, which builds
+ *
+ *   wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage
+ *   .v1beta.GenerativeService.BidiGenerateContentConstrained?access_token=…
+ *
+ * An earlier revision of this file also appended `&model=models/…`. That was
+ * removed: the *constrained* endpoint binds the model through
+ * `liveConnectConstraints.model` on the token itself (see `mintLiveToken`),
+ * and neither the docs nor the reference client passes a model on the wire.
+ * Carrying a second, redundant copy of the model is a place for the two to
+ * drift apart silently.
+ *
+ * The path segment ordering differs from the reference client
+ * (`google.ai.BidiGenerateContent…` vs
+ * `google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent…`).
+ * The two forms are the documented non-ephemeral and ephemeral endpoints
+ * respectively; Google's own prose for ephemeral tokens gives the long form,
+ * while the reference client uses the short one. The long form is used here
+ * because it is the one the documentation states for ephemeral tokens, and
+ * because it names the service and API version explicitly.
+ *
+ * `model` was previously a parameter of this function and is no longer one.
+ * Callers pass the token alone.
+ *
+ * The model is bound by `liveConnectConstraints.model` when the token is
+ * minted, so the browser has nothing to specify.
  */
-export function liveSocketUrl(token: string, model: string = LIVE_TRANSCRIBE_MODEL): string {
-  return `${LIVE_WEBSOCKET_ORIGIN}/v1beta/ws/google.ai.BidiGenerateContentConstrained?access_token=${encodeURIComponent(token)}&model=${encodeURIComponent(`models/${model}`)}`;
+export function liveSocketUrl(token: string): string {
+  return `${LIVE_WEBSOCKET_ORIGIN}/v1beta/ws/google.ai.BidiGenerateContentConstrained?access_token=${encodeURIComponent(token)}`;
 }

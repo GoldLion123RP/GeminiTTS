@@ -2,11 +2,19 @@
 
 An Astro + Tailwind CSS v4 front end for GeminiTTS, built on the Geist design system.
 
-> **Status: `alpha` — pre-feature scaffold.** The toolchain, design tokens, and agent
-> workflow are in place, and the project is now server-capable. No application
-> features have been built yet; the repository still contains the Astro starter
-> (`src/pages/index.astro`, `Welcome.astro`) with Tailwind wired up and nothing on
-> top of it.
+> **Status: `alpha`.** Both panels are built and the page is served from the
+> Astro node adapter. **Speech → Text** records from the microphone over two
+> concurrent paths — an `AudioWorklet` streaming 16 kHz PCM to the Gemini Live
+> API for a provisional draft, and a `MediaRecorder` webm blob that becomes the
+> authoritative cleaned and structured transcript on stop. **Text → Speech**
+> takes pasted or uploaded `.txt` / `.md` / `.pdf` / `.docx`, shows a duration
+> and cost estimate, and generates a downloadable WAV.
+>
+> Not yet verified: a successful end-to-end transcript and a successful
+> generation both need a real `GEMINI_API_KEY`. What *has* been verified with
+> no key present is the degradation behaviour — a failed token mint leaves
+> recording untouched, the batch path still runs, and failures render as plain
+> language with no stack trace.
 >
 > The approved design spec and the phased build plan, with a live progress
 > checklist, are tracked in `docs/superpowers/`.

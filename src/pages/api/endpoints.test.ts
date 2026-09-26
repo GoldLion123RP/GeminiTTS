@@ -13,9 +13,23 @@ const mintLiveToken = mock(async (language: string) => ({
   token: `tok-${language}`,
   model: 'gemini-3.5-transcribe-live',
 }));
+/**
+ * The `liveSocketUrl` stub reproduces the real URL shape exactly, because
+ * `live-token.test.ts` asserts against it and bun shares one module registry
+ * across test files — this mock replaces the real module for the whole run.
+ *
+ * That sharing is why `LIVE_WEBSOCKET_ORIGIN` is exported here as well: an
+ * earlier version of this mock omitted it, `liveSocketUrl`'s template
+ * resolved `undefined` into the URL, and two tests in the *other* file failed
+ * for reasons that pointed nowhere near this mock. A module mock is global
+ * state, and a partial one fails somewhere other than where it was written.
+ */
 mock.module('../../lib/gemini/live-token', () => ({
   LIVE_TRANSCRIBE_MODEL: 'gemini-3.5-transcribe-live',
+  LIVE_WEBSOCKET_ORIGIN: 'wss://generativelanguage.googleapis.com',
   mintLiveToken,
+  liveSocketUrl: (token: string) =>
+    `${'wss://generativelanguage.googleapis.com'}/v1beta/ws/google.ai.BidiGenerateContentConstrained?access_token=${encodeURIComponent(token)}`,
 }));
 
 const transcribe = mock(async () => ({ raw: 'raw text', text: 'structured text', structured: true }));
@@ -78,6 +92,35 @@ describe('POST /api/live-token', () => {
   test('passes the language through to the minter', async () => {
     await call(liveToken, { language: 'hi' });
     expect(mintLiveToken).toHaveBeenCalledWith('hi');
+  });
+
+  /**
+   * Phase 6: the endpoint also returns a ready-to-dial URL, because the
+   * browser cannot import `liveSocketUrl()` — that module imports
+   * `astro:env/server` and the Gemini SDK, so importing it into a client
+   * script would drag both into `dist/client/`. This is the test that keeps
+   * that guarantee honest: the URL must carry the short-lived token, must
+   * not carry the real key, and must be a wss:// Live endpoint.
+   */
+  test('returns a ready-to-dial socket URL carrying the ephemeral token', async () => {
+    const body = (await (await call(liveToken, { language: 'en' })).json()) as Record<string, unknown>;
+
+    expect(typeof body.url).toBe('string');
+    expect(body.url as string).toStartWith('wss://');
+    expect(body.url as string).toContain('BidiGenerateContentConstrained');
+    expect(body.url as string).toContain(`access_token=${encodeURIComponent('tok-en')}`);
+  });
+
+  test('the socket URL never contains the real API key', async () => {
+    const body = (await (await call(liveToken, {})).json()) as Record<string, unknown>;
+    const url = String(body.url);
+
+    // The key is the only thing in this app that must never reach a browser,
+    // so the check is on the value, not on the absence of the name.
+    expect(url).not.toContain('test-key-never-real');
+    // Nor may the URL carry an API-key query parameter at all — the
+    // ephemeral token is the *only* credential on this connection.
+    expect(url).not.toContain('key=');
   });
 
   test('defaults an omitted language to auto', async () => {

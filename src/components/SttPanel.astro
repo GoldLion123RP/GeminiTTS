@@ -1,0 +1,1028 @@
+---
+// Phase 6 — Speech → Text panel.
+//
+// Two capture paths run concurrently from one getUserMedia stream, because the
+// two Gemini endpoints accept different formats (§3.5 of the spec):
+//
+//   Live   — AudioWorklet → raw PCM s16le 16 kHz → WebSocket to Gemini using a
+//            short-lived ephemeral token. Interim text streams in as it arrives.
+//   Batch  — MediaRecorder → webm/opus → POSTed to /api/transcribe on stop.
+//
+// Neither path is allowed to take the other down. A failed token mint, a
+// dropped socket, or a missing AudioWorklet degrades to batch-only; recording
+// is never interrupted by a live-path failure.
+//
+// DESIGN.md shapes only, no invented values — the same vocabulary Phase 5
+// established:
+//   `components.feature-card`  white on canvas, 1px hairline, rounded.md →
+//                             rounded-card, body-md, padding {spacing.lg}.
+//   `components.mono-eyebrow`  Geist Mono, 12/16, uppercase, {colors.mute}.
+//   `components.button-icon-circular`  the MicButton primitive (4.3).
+//   `components.checkbox`      the two toggles below, inline with their labels.
+//
+// No framework. Vanilla <script>, as Phase 4.2 established, so there is no
+// hydration mismatch to debug. Every piece of dynamic text is written with
+// textContent, never innerHTML: a transcript is model output derived from a
+// microphone, and it is never allowed to become markup. The one `innerHTML`
+// *read* is of Astro-authored button glyphs, at startup.
+
+import LanguageSelect from './LanguageSelect.astro';
+import MicButton from './MicButton.astro';
+import TranscriptView from './TranscriptView.astro';
+
+/**
+ * The client-side audio constants live in the <script> block, not here. An
+ * Astro <script> is a separate module and cannot read frontmatter, so
+ * anything the client needs has to be declared there; a second copy up here
+ * would be two sources of truth, and the type checker correctly flags the
+ * unused one. The server-rendered markup needs none of them.
+ */
+
+const MIC_ICON = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>`;
+const STOP_ICON = `<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>`;
+---
+
+<!-- The button glyphs, authored once here and read by the script from these
+     templates. See the comment in the <script> block. -->
+<template id="stt-icon-mic"><Fragment set:html={MIC_ICON} /></template>
+<template id="stt-icon-stop"><Fragment set:html={STOP_ICON} /></template>
+
+<section
+	id="stt"
+	class="rounded-card border border-hairline bg-elevated p-6 shadow-whisper"
+	aria-labelledby="stt-heading"
+>
+	<div class="flex flex-col gap-2">
+		<p class="font-mono text-xs leading-4 font-medium tracking-normal text-mute uppercase">
+			Speech → text
+		</p>
+		<h2 id="stt-heading" class="text-xl leading-7 font-semibold tracking-normal text-ink latin:tracking-[-0.02em]">
+			Turn speech into clean writing
+		</h2>
+		<p class="text-sm leading-5 text-body">
+			Press record and speak. A live draft appears as you talk, then a cleaned, structured
+			transcript replaces it when you stop.
+		</p>
+	</div>
+
+	<!-- 6.1/6.5 — the capture row. The mic is the circular icon button from
+	     4.3; everything beside it is a 6px app control, which is the shape
+	     split DESIGN.md asks for. The panel is a <section> rather than a
+	     form, so <kbd>Space</kbd> is safe to bind to the page here. -->
+	<div class="mt-6 flex flex-wrap items-center gap-4">
+		<MicButton
+		id="stt-mic"
+		icon={MIC_ICON}
+		label="Start recording"
+		/>
+		<div class="flex flex-col gap-1">
+			<p id="stt-mic-label" class="text-sm leading-5 font-medium text-ink">
+				Press record, or hit <kbd class="font-mono text-xs tracking-normal">Space</kbd>
+			</p>
+			<p id="stt-status" class="text-xs leading-4 text-mute" aria-live="polite"></p>
+		</div>
+	</div>
+
+	<div class="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
+		<LanguageSelect id="stt-language" name="language" value="auto" label="Language" />
+		<div class="flex flex-col gap-2">
+			<span class="font-mono text-xs leading-4 font-medium tracking-normal text-mute uppercase">
+				Structure
+			</span>
+			<!-- 6.6 — the structure toggle, default on per §3.3. Wrapped in a
+			     <label> so the control and its text are one hit target. -->
+			<label
+				for="stt-structure"
+				class="flex cursor-pointer items-center gap-2 rounded-app border border-hairline bg-elevated px-3 py-2 text-sm leading-5 text-ink"
+			>
+				<input
+					id="stt-structure"
+					type="checkbox"
+					checked
+					class="size-4 shrink-0 cursor-pointer accent-ink"
+				/>
+				<span>Add document structure</span>
+			</label>
+		</div>
+	</div>
+
+	<!-- Degradation notice. Quiet by design: the plan asks for "a quiet
+	     inline notice", not an error. A user without AudioWorklet support
+	     still gets a fully working panel, so an alert-styled box here would
+	     be alarming about a non-problem. -->
+	<p
+		id="stt-notice"
+		class="mt-4 hidden rounded-app border border-hairline bg-hairline-soft p-3 text-xs leading-4 text-body"
+	></p>
+
+	<div id="stt-result-slot"></div>
+</section>
+
+<TranscriptView />
+
+<script>
+	// Phase 6 behaviour. Plain DOM, no framework, no state library.
+	//
+	// NOTE ON SCOPE: the constants below are duplicated from the frontmatter
+	// because an Astro <script> is a separate module — it cannot read
+	// frontmatter variables. The frontmatter copies are used to render the
+	// initial server-side markup; these drive the client behaviour. They are
+	// kept adjacent and identical for that reason, and the SVG strings are
+	// additionally asserted against the rendered DOM at startup, so a drift
+	// between the two copies fails loudly instead of silently blanking the
+	// button after the first click.
+
+	interface LiveTokenResponse {
+		token: string;
+		model: string;
+		url: string;
+	}
+
+	interface TranscribeResponse {
+		raw: string;
+		text: string;
+		structured: boolean;
+		language: string;
+	}
+
+	/** Raw 16-bit PCM, 16 kHz, little-endian, mono — the Live API's only input format. */
+	const LIVE_SAMPLE_RATE = 16_000;
+
+	/**
+	 * The model the live session is bound to. Sent in the setup message so the
+	 * client and the token's `liveConnectConstraints.model` name the same
+	 * thing. It is read from the token response where one is available, and
+	 * this is only the fallback.
+	 */
+	const LIVE_MODEL = 'gemini-3.5-transcribe-live';
+
+	/** 1 024–2 048 samples per the docs; 1 600 is exactly 100 ms at 16 kHz.
+	    The AudioWorklet delivers whatever the render quantum gives it (128
+	    frames), so this is advisory rather than enforced — the wire format
+	    does not require a fixed frame size, only 16-bit little-endian mono at
+	    the declared rate. It is recorded here because the value documents the
+	    intended cadence and bounds the bytes per send. */
+	const FRAME_SAMPLES = 1_600;
+
+	/** Negotiated with `isTypeSupported` before recording starts. See
+	    `startBatchPath` for why the probe rather than an assumption. */
+	const PREFERRED_MIME_TYPES = [
+		'audio/webm;codecs=opus',
+		'audio/webm',
+		'audio/ogg;codecs=opus',
+		'audio/mp4',
+	];
+
+	/**
+	 * base64 slice size. `String.fromCharCode(...bytes)` on a large frame
+	 * overflows the argument limit and throws — the same trap the Phase 5
+	 * upload helper hit, in a place where it is less obvious because the
+	 * frames are small. Every base64 conversion in this file goes through
+	 * `toBase64` below so the fix exists in exactly one place.
+	 */
+	const BASE64_SLICE = 0x8000;
+
+	function toBase64(bytes: Uint8Array): string {
+		let binary = '';
+		for (let i = 0; i < bytes.length; i += BASE64_SLICE) {
+			binary += String.fromCharCode(...bytes.subarray(i, i + BASE64_SLICE));
+		}
+		return btoa(binary);
+	}
+
+	const section = document.getElementById('stt') as HTMLElement;
+	const micButton = document.getElementById('stt-mic') as HTMLButtonElement;
+	const micLabel = document.getElementById('stt-mic-label') as HTMLParagraphElement;
+	const statusLine = document.getElementById('stt-status') as HTMLParagraphElement;
+	const noticeLine = document.getElementById('stt-notice') as HTMLParagraphElement;
+	const languageSelect = document.getElementById('stt-language') as HTMLSelectElement;
+	const structureToggle = document.getElementById('stt-structure') as HTMLInputElement;
+	const resultSlot = document.getElementById('stt-result-slot') as HTMLDivElement;
+	const template = document.getElementById('stt-transcript') as HTMLTemplateElement;
+
+	// The two button glyphs, captured from server-rendered templates rather
+	// than restated here. An Astro <script> cannot read frontmatter, so the
+	// alternative was a second copy of each SVG string — and two copies of an
+	// icon drift. Reading them from the DOM keeps the frontmatter the single
+	// source. This is the only `innerHTML` read in the file, and it is a read
+	// of Astro-authored markup, never of model output or user text: every
+	// dynamic value in this file is written with textContent.
+	const iconMarkup = (id: string, fallback: string): string => {
+		const node = document.getElementById(id) as HTMLTemplateElement | null;
+		return node?.innerHTML ?? fallback;
+	};
+	const IDLE_ICON = iconMarkup('stt-icon-mic', '');
+	const RECORDING_ICON = iconMarkup('stt-icon-stop', IDLE_ICON);
+
+	// --- session state ---------------------------------------------------
+
+	/**
+	 * One recording at a time. `recording` is the single source of truth for
+	 * what the mic button shows; every other bit of session state hangs off
+	 * it. Rapid toggling (§5.7) is handled by making `start`/`stop` mutually
+	 * exclusive on this one flag and by nulling every resource in `stop`,
+	 * so a second start can never find a half-dead stream still attached.
+	 */
+	let recording = false;
+	/** Guards the window where a start is in flight but the flag is not yet set. */
+	let starting = false;
+	let stopping = false;
+
+	let mediaStream: MediaStream | null = null;
+	let mediaRecorder: MediaRecorder | null = null;
+	let audioContext: AudioContext | null = null;
+	let workletNode: AudioWorkletNode | null = null;
+	let socket: WebSocket | null = null;
+	/**
+	 * Sends any partial PCM frame still buffered by the worklet. Assigned when
+	 * the audio graph attaches and called on stop, so the last few hundred
+	 * milliseconds of speech are not silently discarded — a truncated tail is
+	 * exactly the kind of defect that reads as "the transcript missed my last
+	 * words" and is never traced back here.
+	 */
+	let flushPending: (() => void) | null = null;
+
+	/** The live draft as it stands: finalized segments plus the current interim. */
+	let liveFinal = '';
+	let liveInterim = '';
+
+	/** The blob the batch path is still filling. Null until onstop resolves. */
+	let recordedChunks: BlobPart[] = [];
+	let recordedMime = '';
+
+	/** Rendered result nodes, so clipboard and content updates have a target. */
+	let view: {
+		container: HTMLElement;
+		text: HTMLParagraphElement;
+		status: HTMLParagraphElement;
+		copy: HTMLButtonElement;
+		copied: HTMLParagraphElement;
+		rawDetails: HTMLDetailsElement;
+		raw: HTMLParagraphElement;
+	} | null = null;
+
+	/** The authoritative transcript. The copy control reads this, not the DOM. */
+	let finalText = '';
+
+	// --- small helpers ---------------------------------------------------
+
+	function setStatus(text: string): void {
+		statusLine.textContent = text;
+	}
+
+	function setNotice(text: string): void {
+		noticeLine.textContent = text;
+		noticeLine.classList.toggle('hidden', text.length === 0);
+	}
+
+	function setMicState(state: 'idle' | 'recording' | 'busy'): void {
+		const isRecording = state === 'recording';
+		micButton.disabled = state === 'busy';
+		micButton.setAttribute('data-recording', isRecording ? 'true' : 'false');
+		micButton.setAttribute('aria-pressed', isRecording ? 'true' : 'false');
+		micButton.setAttribute('aria-label', isRecording ? 'Stop recording' : 'Start recording');
+		// Swapping the glyph is the one place the button's own contents are
+		// replaced, and it is a fixed Astro-authored string — never anything
+		// derived from the microphone or the model.
+		micButton.innerHTML = isRecording ? RECORDING_ICON : IDLE_ICON;
+		micButtonLabel();
+	}
+
+	function micButtonLabel(): void {
+		const isRecording = micButton.getAttribute('data-recording') === 'true';
+		// textContent, not innerHTML: the idle label contains a <kbd>, and
+		// building it from parts keeps the emphasis element while leaving no
+		// path that can inject markup.
+		micLabel.textContent = '';
+		if (isRecording) {
+			micLabel.append('Recording. Press again to stop.');
+			return;
+		}
+		micLabel.append('Press record, or hit ');
+		const kbd = document.createElement('kbd');
+		kbd.className = 'font-mono text-xs tracking-normal';
+		kbd.textContent = 'Space';
+		micLabel.append(kbd);
+	}
+
+	// --- 6.3 result rendering -------------------------------------------
+
+	function ensureView(): NonNullable<typeof view> {
+		if (view) return view;
+
+		const node = template.content.firstElementChild!.cloneNode(true) as HTMLElement;
+		resultSlot.replaceChildren(node);
+
+		view = {
+			container: node,
+			text: node.querySelector('[data-role="text"]') as HTMLParagraphElement,
+			status: node.querySelector('[data-role="status"]') as HTMLParagraphElement,
+			copy: node.querySelector('[data-role="copy"]') as HTMLButtonElement,
+			copied: node.querySelector('[data-role="copied"]') as HTMLParagraphElement,
+			rawDetails: node.querySelector('[data-role="raw-details"]') as HTMLDetailsElement,
+			raw: node.querySelector('[data-role="raw"]') as HTMLParagraphElement,
+		};
+		return view;
+	}
+
+	/** The live draft: finalized text plus the current interim hypothesis. */
+	function draftText(): string {
+		return [liveFinal.trim(), liveInterim.trim()].filter((part) => part.length > 0).join(' ');
+	}
+
+	/**
+	 * Paints the draft in the provisional colour. Interim text is by
+	 * definition a hypothesis, and `DESIGN.md` reserves {colors.mute} for
+	 * exactly that. It is never presented as a result.
+	 */
+	function renderDraft(): void {
+		if (!view) return;
+		const text = draftText();
+		view.text.textContent = text;
+		view.text.className = 'text-sm leading-5 whitespace-pre-wrap text-mute';
+		view.copy.classList.add('hidden');
+		view.copied.classList.add('hidden');
+		view.rawDetails.classList.add('hidden');
+		view.status.textContent = 'Live draft — provisional. The clean transcript arrives when you stop.';
+		view.status.classList.remove('hidden');
+	}
+
+	/** Paints the authoritative transcript. Never tinted, never provisional. */
+	function renderFinal(text: string, raw: string, structured: boolean): void {
+		const v = ensureView();
+		v.text.textContent = text;
+		v.text.className = 'text-sm leading-5 whitespace-pre-wrap text-ink';
+		v.copy.classList.remove('hidden');
+		v.copied.classList.add('hidden');
+
+		v.status.textContent = structured
+			? 'Cleaned and structured. The raw transcript is below for comparison.'
+			: 'Cleaned. The structure pass was skipped, so this is the raw transcript.';
+		v.status.classList.remove('hidden');
+
+		// The raw transcript is always retained, so the effect of the
+		// structure pass is auditable rather than opaque (§3.3). It is only
+		// offered when it actually differs — a disclosure whose contents
+		// match what is already on screen is noise.
+		const differs = raw.trim() !== text.trim();
+		v.rawDetails.classList.toggle('hidden', !differs);
+		if (differs) v.raw.textContent = raw;
+	}
+
+	function renderEmpty(message: string): void {
+		const v = ensureView();
+		v.text.textContent = '';
+		v.copy.classList.add('hidden');
+		v.copied.classList.add('hidden');
+		v.rawDetails.classList.add('hidden');
+		v.status.textContent = message;
+		v.status.classList.remove('hidden');
+	}
+
+	function resetResult(): void {
+		resultSlot.replaceChildren();
+		view = null;
+		finalText = '';
+	}
+
+	// --- 6.1/6.3 recording start ----------------------------------------
+
+	/**
+	 * `getUserMedia` and the AudioContext are both reached from inside the
+	 * click handler, never on page load. A context created outside a user
+	 * gesture starts suspended in Chrome and Safari, and every subsequent
+	 * `resume()` is unreliable — the classic cause of "the live draft never
+	 * appears, and the recording is silent".
+	 */
+	async function start(): Promise<void> {
+		if (recording || starting || stopping) return;
+		starting = true;
+		setMicState('busy');
+		setNotice('');
+
+		if (!window.isSecureContext) {
+			finishStart('Microphone capture needs a secure connection (https, or localhost).');
+			return;
+		}
+		if (!navigator.mediaDevices?.getUserMedia) {
+			finishStart('This browser does not support microphone capture.');
+			return;
+		}
+
+		resetResult();
+		liveFinal = '';
+		liveInterim = '';
+
+		// Constructed here, inside the click handler, so autoplay policy never
+		// blocks it. See the note at the bottom of this file for why it is
+		// per-recording rather than created once at load.
+		try {
+			audioContext = new AudioContext({ sampleRate: LIVE_SAMPLE_RATE });
+			if (audioContext.state === 'suspended') await audioContext.resume();
+		} catch {
+			audioContext = null;
+		}
+
+		try {
+			mediaStream = await navigator.mediaDevices.getUserMedia({
+				audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
+			});
+		} catch (error) {
+			// A denied permission and an absent device are different problems
+			// and produce different names, so the name is what distinguishes
+			// them here. Both are reported honestly rather than collapsed into
+			// "recording failed".
+			const name = error instanceof DOMException ? error.name : '';
+			finishStart(
+				name === 'NotAllowedError'
+					? 'Microphone access was declined. Allow it in your browser’s site settings, then try again.'
+					: name === 'NotFoundError'
+						? 'No microphone was found on this device.'
+						: 'The microphone could not be opened. Check that it is connected and not in use elsewhere.',
+			);
+			return;
+		}
+
+		startBatchPath();
+		// The live path is started without being awaited. It is an enhancement,
+		// and a slow token mint must not hold the recording hostage — the
+		// batch path is already capturing by this point.
+		void startLivePath();
+
+		starting = false;
+		recording = true;
+		setMicState('recording');
+		setStatus('Recording. A live draft appears as you speak.');
+	}
+
+	function finishStart(message: string): void {
+		starting = false;
+		recording = false;
+		setMicState('idle');
+		setNotice(message);
+		setStatus('');
+	}
+
+	/**
+	 * 6.3 — MediaRecorder over the same stream.
+	 *
+	 * The MIME type is negotiated with `isTypeSupported` rather than assumed,
+	 * because the Transcribe endpoint accepts webm/opus and a bare
+	 * `audio/webm` from an unsupported browser produces a 400 only *after* the
+	 * user has finished a recording they expected to work. Negotiating up
+	 * front keeps the failure at zero seconds instead of at the end.
+	 */
+	function startBatchPath(): void {
+		recordedChunks = [];
+
+		if (typeof MediaRecorder === 'undefined' || !mediaStream) {
+			// Nothing can be transcribed without it, so this one is fatal.
+			void stop('This browser cannot record audio, so no transcript could be produced.');
+			return;
+		}
+
+		const mimeType =
+			PREFERRED_MIME_TYPES.find((candidate) => MediaRecorder.isTypeSupported(candidate)) ?? '';
+		recordedMime = mimeType;
+
+		try {
+			mediaRecorder = mimeType === ''
+				? new MediaRecorder(mediaStream)
+				: new MediaRecorder(mediaStream, { mimeType });
+		} catch {
+			// Some browsers expose isTypeSupported for a type they then refuse
+			// to construct. Dropping to the constructor default is the
+			// documented fallback and still produces webm on Chromium.
+			try {
+				mediaRecorder = new MediaRecorder(mediaStream);
+				recordedMime = '';
+			} catch {
+				mediaRecorder = null;
+				void stop('This browser could not start a recording, so no transcript could be produced.');
+				return;
+			}
+		}
+
+		const recorder = mediaRecorder;
+		recorder.addEventListener('dataavailable', (event) => {
+			if (event.data && event.data.size > 0) recordedChunks.push(event.data);
+		});
+		recorder.addEventListener('error', () => {
+			void stop('The recording stopped unexpectedly.');
+		});
+		recorder.start();
+	}
+
+	/**
+	 * 6.2 — the live path.
+	 *
+	 * Every failure below is absorbed: the live draft is a convenience, the
+	 * authoritative transcript is the product, and interrupting a recording
+	 * because a WebSocket would not open would be a bug, not caution.
+	 */
+	async function startLivePath(): Promise<void> {
+		if (!mediaStream) return;
+
+		// No AudioWorklet, or no AudioContext this time round. Distinguished
+		// from "this browser cannot" deliberately: a failed context
+		// construction is a degradation, and blaming the browser for it is
+		// how the AudioContext bug above hid for a whole verification pass.
+		if (typeof AudioWorkletNode === 'undefined') {
+			setNotice('Live draft needs AudioWorklet, which this browser does not support. Recording will still produce a full transcript on stop.');
+			return;
+		}
+		if (!audioContext) {
+			setNotice('Live draft could not start. Recording will still produce a full transcript on stop.');
+			return;
+		}
+
+		try {
+			const response = await fetch('/api/live-token', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ language: languageSelect.value }),
+			});
+			if (!response.ok) {
+				const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+				setNotice(
+					payload?.error
+						? `Live draft is off: ${payload.error} Recording still works and the transcript arrives on stop.`
+						: 'Live draft is off. Recording still works and the transcript arrives on stop.',
+				);
+				return;
+			}
+
+			const minted = (await response.json()) as LiveTokenResponse;
+			if (typeof minted.url !== 'string' || minted.url.length === 0) {
+				setNotice('Live draft is off. Recording still works and the transcript arrives on stop.');
+				return;
+			}
+
+			await connectSocket(minted.url, typeof minted.model === 'string' ? minted.model : LIVE_MODEL);
+		} catch {
+			setNotice('Live draft is off. Recording still works and the transcript arrives on stop.');
+		}
+	}
+
+	/** Opens the socket and wires the audio graph once the setup completes. */
+	function connectSocket(url: string, model: string): Promise<void> {
+		return new Promise((resolve) => {
+			let settled = false;
+			const finish = (ok: boolean) => {
+				if (settled) return;
+				settled = true;
+				if (!ok) setNotice('Live draft is off. Recording still works and the transcript arrives on stop.');
+				else section.setAttribute('data-live', 'connected');
+				resolve();
+			};
+
+			try {
+				socket = new WebSocket(url);
+			} catch {
+				socket = null;
+				finish(false);
+				return;
+			}
+
+			// The socket is not the only thing that can be slow. A 15 s ceiling
+			// stops a silently-never-opening socket from holding `starting`
+			// and leaving the button permanently disabled.
+			const timer = window.setTimeout(() => finish(false), 15_000);
+
+			socket.addEventListener('open', () => {
+				// The first frame must be the setup message. The model sent
+				// here is the one the server reported when it minted the token,
+				// so the client and the token's `liveConnectConstraints.model`
+				// cannot name different things. The constrained endpoint takes
+				// its configuration from the token, so these fields mirror what
+				// `mintLiveToken` baked in rather than overriding it.
+				sendSocket({
+					setup: {
+						model: `models/${model}`,
+						generationConfig: { responseModalities: ['TEXT'] },
+						inputAudioTranscription: {},
+					},
+				});
+			});
+
+			socket.addEventListener('message', (event) => {
+				const data = typeof event.data === 'string' ? event.data : '';
+				if (data.length === 0) return;
+
+				let parsed: { setupComplete?: unknown; serverContent?: Record<string, unknown> };
+				try {
+					parsed = JSON.parse(data) as typeof parsed;
+				} catch {
+					return;
+				}
+
+				// Audio can begin flowing before setup is acknowledged, so the
+				// worklet is attached on the acknowledgement and not before.
+				if (parsed.setupComplete !== undefined) {
+					window.clearTimeout(timer);
+					attachAudioGraph();
+					finish(true);
+					return;
+				}
+
+				const content = parsed.serverContent;
+				if (!content) return;
+
+				const finalized = (content.inputTranscription as { text?: string } | undefined)?.text;
+				const interim = (content.interimInputTranscription as { text?: string } | undefined)?.text
+					?? (content.interim_input_transcription as { text?: string } | undefined)?.text;
+
+				if (typeof finalized === 'string' && finalized.length > 0) {
+					// A finalized segment is committed and the interim is
+					// dropped: keeping both would duplicate the same words.
+					liveFinal = liveFinal.length > 0 ? `${liveFinal} ${finalized.trim()}` : finalized.trim();
+					liveInterim = '';
+					renderDraft();
+					return;
+				}
+				if (typeof interim === 'string') {
+					liveInterim = interim;
+					renderDraft();
+				}
+			});
+
+			socket.addEventListener('error', () => finish(false));
+
+			socket.addEventListener('close', () => {
+				section.removeAttribute('data-live');
+				// A socket that dies mid-recording must not interrupt anything.
+				// The draft stays on screen as a draft and the batch path
+				// finishes the job on stop.
+				finish(false);
+			});
+		});
+	}
+
+	function sendSocket(payload: unknown): void {
+		if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(payload));
+	}
+
+	/**
+	 * 6.2 — the AudioWorklet.
+	 *
+	 * The processor is created from a Blob URL rather than a separate module
+	 * file. A worklet must be loaded from a URL, and inlining the source
+	 * here keeps the resampling contract (16 kHz, s16le, mono) visible in the
+	 * same file as the consumer of its output, instead of split across two
+	 * files that must agree about sample rate.
+	 */
+	async function attachAudioGraph(): Promise<void> {
+		if (!mediaStream || !audioContext || workletNode) return;
+
+		const source = `<!doctype html>
+class Pcm16 extends AudioWorkletProcessor {
+  process(inputs) {
+    const channel = inputs[0]?.[0];
+    if (channel && channel.length > 0) {
+      // Float32 [-1, 1] → Int16 s16le, the only format the Live API takes.
+      const out = new Int16Array(channel.length);
+      for (let i = 0; i < channel.length; i++) {
+        const s = Math.max(-1, Math.min(1, channel[i]));
+        out[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+      }
+      this.port.postMessage(out.buffer, [out.buffer]);
+    }
+    return true;
+  }
+}
+registerProcessor('gemini-pcm16', Pcm16);`;
+
+		const workletUrl = URL.createObjectURL(new Blob([source], { type: 'text/javascript' }));
+		try {
+			await audioContext.audioWorklet.addModule(workletUrl);
+		} catch {
+			setNotice('Live draft is off. Recording still works and the transcript arrives on stop.');
+			return;
+		} finally {
+			URL.revokeObjectURL(workletUrl);
+		}
+
+		const node = new AudioWorkletNode(audioContext, 'gemini-pcm16');
+
+		// The render quantum is 128 frames, but the docs specify 100 ms
+		// frames. PCM is therefore accumulated and flushed whole at
+		// FRAME_SAMPLES, which also bounds each WebSocket message instead of
+		// emitting a dozen tiny ones per 100 ms.
+		//
+		// The accumulator is deliberately simple: concatenate, send the first
+		// FRAME_BYTES, keep the remainder. A cleverer version tried to track
+		// part boundaries in place and was unreadable — at 3 200 bytes per
+		// frame the copy costs nothing, so clarity wins.
+		let pending = new Uint8Array(0);
+		const FRAME_BYTES = FRAME_SAMPLES * 2; // s16le, 2 bytes per sample
+
+		const flushPending = () => {
+			while (pending.byteLength >= FRAME_BYTES) {
+				const frame = pending.subarray(0, FRAME_BYTES);
+				// `slice` copies, so the sent view cannot be invalidated by a
+				// later reassignment of `pending`.
+				sendSocket({
+					realtimeInput: {
+						audio: { data: toBase64(frame.slice()), mimeType: `audio/pcm;rate=${LIVE_SAMPLE_RATE}` },
+					},
+				});
+				pending = pending.slice(FRAME_BYTES);
+			}
+		};
+
+		node.port.onmessage = (event: MessageEvent<ArrayBuffer>) => {
+			if (!recording) return;
+			const pcm = new Uint8Array(event.data);
+			if (pcm.byteLength === 0) return;
+
+			const merged = new Uint8Array(pending.byteLength + pcm.byteLength);
+			merged.set(pending, 0);
+			merged.set(pcm, pending.byteLength);
+			pending = merged;
+			flushPending();
+		};
+
+		const source_ = audioContext.createMediaStreamSource(mediaStream);
+		source_.connect(node);
+		// Deliberately not connected to `destination`: this is a capture path,
+		// and connecting it would play the user's own microphone back at them.
+		workletNode = node;
+	}
+
+	// --- 6.4 recording stop ---------------------------------------------
+
+	/**
+	 * The stop sequence, in the order §5.6 requires:
+	 *   close socket → finalise the MediaRecorder blob → POST → replace the
+	 *   draft with the authoritative text → attempt the clipboard write.
+	 *
+	 * The draft is *replaced*, not appended to. The two texts come from
+	 * different models and appending them would duplicate every word.
+	 */
+	async function stop(failureMessage?: string): Promise<void> {
+		if (stopping) return;
+		stopping = true;
+		recording = false;
+		setMicState('busy');
+		section.removeAttribute('data-live');
+
+		// --- teardown ----------------------------------------------------
+		// Every resource is released here, unconditionally, and nulled. §5.7
+		// requires that ten rapid toggles leak no streams and orphan no
+		// sockets; that holds only if there is exactly one place that frees
+		// them and it always runs.
+		if (workletNode) {
+			workletNode.port.onmessage = null;
+			workletNode.disconnect();
+			workletNode = null;
+		}
+		// The tail of the audio is flushed before the socket is closed, so the
+		// last partial frame reaches the server instead of being dropped on
+		// the floor.
+		flushPending?.();
+		flushPending = null;
+		if (socket) {
+			// Telling the server the audio is over lets it finalise the last
+			// turn instead of waiting out its own silence timeout.
+			sendSocket({ realtimeInput: { audioStreamEnd: true } });
+			socket.close();
+			socket = null;
+		}
+		if (mediaStream) {
+			for (const track of mediaStream.getTracks()) track.stop();
+			mediaStream = null;
+		}
+
+		// --- wait for the blob -------------------------------------------
+		const blob = await finaliseRecording();
+
+		if (audioContext) {
+			void audioContext.close();
+			audioContext = null;
+		}
+
+		if (failureMessage) {
+			stopping = false;
+			setMicState('idle');
+			setNotice(failureMessage);
+			return;
+		}
+
+		if (blob === null || blob.size === 0) {
+			stopping = false;
+			setMicState('idle');
+			setStatus('');
+			// An explicit "no speech", never an empty box. Silence reaching
+			// the user as a blank panel is indistinguishable from a bug.
+			renderEmpty('No speech was detected. Check the microphone is unmuted and try again.');
+			return;
+		}
+
+		// --- 6.4 transcribe ------------------------------------------------
+		setStatus('Transcribing…');
+		renderDraft();
+
+		try {
+			const base64 = await blobToBase64(blob);
+			const response = await fetch('/api/transcribe', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({
+					audio: base64,
+					mimeType: blob.type || recordedMime || 'audio/webm',
+					language: languageSelect.value,
+					structure: structureToggle.checked,
+				}),
+			});
+
+			if (!response.ok) {
+				const payload = (await response.json().catch(() => null)) as
+					| { error?: string; detail?: string }
+					| null;
+				throw new Error(payload?.error ?? 'The transcript could not be produced.');
+			}
+
+			const result = (await response.json()) as TranscribeResponse;
+			finalText = result.text;
+
+			stopping = false;
+			setMicState('idle');
+			setStatus('');
+			renderFinal(result.text, result.raw, result.structured);
+
+			// 6.4 — the clipboard write, and only ever an *observed* outcome.
+			await copyToClipboard(finalText);
+		} catch (error) {
+			stopping = false;
+			setMicState('idle');
+			setStatus('');
+			// The draft is left on screen. It is a genuine artefact of what
+			// was said, and throwing it away on a server failure would lose
+			// the user's words because of a network problem.
+			renderEmpty(
+				error instanceof Error
+					? `The transcript could not be produced. ${error.message}`
+					: 'The transcript could not be produced.',
+			);
+			view?.copy.classList.remove('hidden');
+		}
+	}
+
+	/** Resolves the recorder's blob, or null if nothing usable was captured. */
+	function finaliseRecording(): Promise<Blob | null> {
+		const recorder = mediaRecorder;
+		mediaRecorder = null;
+		if (!recorder || recorder.state === 'inactive') {
+			return Promise.resolve(
+				recordedChunks.length > 0 ? new Blob(recordedChunks, { type: recordedMime }) : null,
+			);
+		}
+
+		return new Promise((resolve) => {
+			const settle = () => {
+				resolve(
+					recordedChunks.length > 0 ? new Blob(recordedChunks, { type: recordedMime }) : null,
+				);
+			};
+			recorder.addEventListener('stop', settle, { once: true });
+			try {
+				recorder.requestData();
+				recorder.stop();
+			} catch {
+				settle();
+			}
+		});
+	}
+
+	async function blobToBase64(blob: Blob): Promise<string> {
+		const bytes = new Uint8Array(await blob.arrayBuffer());
+		let binary = '';
+		const SLICE = 0x8000;
+		for (let i = 0; i < bytes.length; i += SLICE) {
+			binary += String.fromCharCode(...bytes.subarray(i, i + SLICE));
+		}
+		return btoa(binary);
+	}
+
+	/**
+	 * 6.4 — auto-copy, reporting only what actually happened.
+	 *
+	 * `navigator.clipboard` is undefined on insecure origins and rejects when
+	 * permission is denied. Both are normal. The "Copied" label is written
+	 * only inside the success path; every other path leaves the Copy control
+	 * standing, which is the honest and actionable outcome.
+	 */
+	async function copyToClipboard(text: string): Promise<void> {
+		if (text.trim().length === 0) return;
+		const v = view;
+		if (!v) return;
+
+		try {
+			if (!navigator.clipboard?.writeText) throw new Error('unavailable');
+			await navigator.clipboard.writeText(text);
+			v.copied.classList.remove('hidden');
+			v.copy.classList.add('hidden');
+		} catch {
+			// Permission denied, or no clipboard API. The Copy button is
+			// already visible; nothing more needs saying.
+			v.copied.classList.add('hidden');
+			v.copy.classList.remove('hidden');
+		}
+	}
+
+	// --- 6.5 triggers ----------------------------------------------------
+
+	function toggle(): void {
+		if (starting || stopping) return;
+		if (recording) void stop();
+		else void start();
+	}
+
+	micButton.addEventListener('click', () => toggle());
+
+	/**
+	 * <kbd>Space</kbd> toggles recording — but only when the user is not
+	 * typing. The guard is `activeElement`, and it is checked before the key
+	 * so that pressing Space inside the text-to-speech textarea inserts a
+	 * space rather than opening a microphone. `event.repeat` is ignored so
+	 * holding the key cannot retrigger on every repeat event.
+	 */
+	document.addEventListener('keydown', (event) => {
+		if (event.code !== 'Space') return;
+
+		const el = document.activeElement;
+		if (
+			el instanceof HTMLElement &&
+			(el.tagName === 'INPUT' ||
+				el.tagName === 'TEXTAREA' ||
+				el.tagName === 'SELECT' ||
+				el.isContentEditable)
+		) {
+			return;
+		}
+		if (event.repeat) return;
+		// A summary or a button owns Space for its own activation; recording
+		// must not steal it.
+		const target = event.target;
+		if (target instanceof HTMLElement && target.closest('button, a, summary, [role="button"]')) {
+			return;
+		}
+
+		event.preventDefault();
+		toggle();
+	});
+
+	// The Copy control is inside a <template> that is cloned per transcript, so
+	// it has no node to attach a listener to until one exists. Delegation on
+	// the slot covers every clone, including ones rendered after this line
+	// runs.
+	resultSlot.addEventListener('click', (event) => {
+		const target = event.target;
+		if (target instanceof HTMLElement && target.matches('[data-role="copy"]')) {
+			void copyToClipboard(finalText);
+		}
+	});
+
+	// Unload cleanup. Without this, a tab closed mid-recording leaves the
+	// microphone indicator running until the browser gives up on its own.
+	window.addEventListener('pagehide', () => {
+		if (!recording && !starting && !stopping) return;
+		recording = false;
+		if (workletNode) {
+			workletNode.disconnect();
+			workletNode = null;
+		}
+		if (socket) {
+			socket.close();
+			socket = null;
+		}
+		if (mediaStream) {
+			for (const track of mediaStream.getTracks()) track.stop();
+			mediaStream = null;
+		}
+		if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+			try {
+				mediaRecorder.stop();
+			} catch {
+				/* already stopping */
+			}
+		}
+	});
+
+	// The AudioContext is created per recording, inside the click handler, and
+	// closed at the end of it.
+	//
+	// An earlier revision created it once at page load and closed it on stop.
+	// That looks like a harmless optimisation and is not: `close()` is
+	// permanent — a closed AudioContext cannot be reopened, only replaced. So
+	// the *second* recording found `audioContext` null, took the "no
+	// AudioWorklet" branch, and told the user "Live draft is unavailable in
+	// this browser" when the browser was fine. It failed silently, it blamed
+	// the environment, and nothing in the type checker or the tests could
+	// have caught it. Creating it per-recording is both correct and simpler.
+	//
+	// It stays inside the click handler so autoplay policy never blocks it:
+	// a context constructed outside a user gesture starts suspended.
+
+	setMicState('idle');
+</script>

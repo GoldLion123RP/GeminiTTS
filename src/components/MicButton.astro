@@ -20,16 +20,24 @@ interface Props {
 	/** Rendered in the centre. An inline SVG, not a glyph. */
 	icon: string;
 	label: string;
+	/**
+	 * Optional DOM id, so a panel's script can address the control. Added in
+	 * Phase 6: the button was previously only ever static markup, and a
+	 * recording control that a script cannot reference is a control a script
+	 * cannot drive.
+	 */
+	id?: string;
 	/** Adds the pulsing ink-filled state. */
 	recording?: boolean;
 	disabled?: boolean;
 }
 
-const { icon, label, recording = false, disabled = false } = Astro.props;
+const { icon, label, id, recording = false, disabled = false } = Astro.props;
 ---
 
 <button
 	type="button"
+	id={id}
 	class:list={[
 		'flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-full border border-hairline bg-elevated text-ink',
 		'recording:animate-recording recording:border-ink recording:bg-ink recording:text-on-primary',

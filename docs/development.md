@@ -54,6 +54,31 @@ browser, so `GEMINI_API_KEY` can stay a server-only secret. Anything touching
 the key stays server-side. API endpoints live at `src/pages/api/*.ts` and are
 server-only.
 
+### The Live socket URL is served, not built client-side
+
+The browser opens a WebSocket straight to Gemini, so a client bundle does
+reference `wss://generativelanguage.googleapis.com`. That is not a leak, and it
+is worth understanding why it is safe and why the URL arrives from the server.
+
+`src/lib/gemini/live-token.ts` cannot be imported from an Astro `<script>`: it
+transitively imports `astro:env/server` (via `client.ts`) and `@google/genai`,
+so importing it would pull the secret reader and the whole SDK into
+`dist/client/`. `POST /api/live-token` therefore returns a finished `url`
+alongside the token, and the panel dials that string.
+
+**The invariant to preserve:** the URL on the wire carries an ephemeral,
+single-use, model-scoped token and nothing else. It must never gain a `key=`
+parameter, and the real `GEMINI_API_KEY` must never appear in a response body
+or in anything under `dist/client/`. Both are asserted by
+`src/lib/gemini/live-token.test.ts` and `src/pages/api/endpoints.test.ts`.
+
+Verify after any change here — the `generativelanguage` string should **not**
+appear anywhere under `dist/client/`:
+
+```powershell
+Select-String -Path "dist\client\**" -Pattern "generativelanguage" -SimpleMatch -List
+```
+
 ## Environment quirk: `bun install` fails on `E:`
 
 ```
