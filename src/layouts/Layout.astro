@@ -1,5 +1,7 @@
 ---
 import { Font } from 'astro:assets';
+import SiteFooter from '../components/SiteFooter.astro';
+import SiteHeader from '../components/SiteHeader.astro';
 import '../styles/global.css';
 
 interface Props {
@@ -28,6 +30,19 @@ const { title, description } = Astro.props;
 		<Font cssVariable="--font-geist-mono" />
 	</head>
 	<body>
-		<slot />
+		{/*
+			Phase 1.3: the header and footer live here, not in a page, so every
+			route inherits the same chrome. `min-height: 100dvh` on a flex column
+			keeps the footer at the bottom of the viewport on a short page
+			instead of letting it ride up under the content — a sticky footer
+			needs the column to be at least as tall as the screen. `dvh` rather
+			than `vh` so mobile browser chrome does not push it out of view.
+		*/}
+		<div class="flex min-h-dvh flex-col">
+			<SiteHeader />
+			<slot />
+			<SiteFooter />
+		</div>
 	</body>
 </html>
+

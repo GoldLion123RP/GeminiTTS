@@ -29,13 +29,21 @@ export interface Transcription {
   readonly structured: boolean;
 }
 
+export const TRANSCRIBE_ATTEMPTS = 2;
+
 export async function transcribe(options: TranscribeOptions): Promise<Transcription> {
   const raw = await transcribeClean(options);
   if (raw.trim().length === 0) return { raw: '', text: '', structured: false };
   if (!options.structure) return { raw, text: raw, structured: false };
 
-  const text = await applyStructure(raw);
-  return { raw, text, structured: true };
+  try {
+    const text = await applyStructure(raw);
+    return { raw, text, structured: true };
+  } catch {
+    // If the secondary structure pass fails upstream, the clean transcript
+    // is preserved so the user does not lose their spoken words.
+    return { raw, text: raw, structured: false };
+  }
 }
 
 /**
@@ -55,25 +63,34 @@ async function transcribeClean(options: TranscribeOptions): Promise<string> {
   const codes = languageCodes(options.language);
   const smart = { mode: AudioTranscriptionConfigMode.SMART, ...(codes.length > 0 ? { languageCodes: codes } : {}) };
 
-  try {
-    const response = await gemini().models.generateContent({
-      model: TRANSCRIBE_MODEL,
-      contents: [
-        {
-          role: 'user',
-          parts: [{ inlineData: { mimeType: options.mimeType, data: options.audioBase64 } }],
-        },
-      ],
-      config: { audioTranscriptionConfig: smart },
-    });
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= TRANSCRIBE_ATTEMPTS; attempt++) {
+    try {
+      const response = await gemini().models.generateContent({
+        model: TRANSCRIBE_MODEL,
+        contents: [
+          {
+            role: 'user',
+            parts: [{ inlineData: { mimeType: options.mimeType, data: options.audioBase64 } }],
+          },
+        ],
+        config: { audioTranscriptionConfig: smart },
+      });
 
-    const transcript = readTranscript(response.candidates?.[0]?.content?.parts);
-    if (transcript === undefined) throw blockedOrEmpty();
-    return transcript.trim();
-  } catch (cause) {
-    if (cause instanceof GeminiError) throw cause;
-    throw asGeminiError(cause);
+      const transcript = readTranscript(response.candidates?.[0]?.content?.parts);
+      if (transcript === undefined) throw blockedOrEmpty();
+      return transcript.trim();
+    } catch (cause) {
+      if (cause instanceof GeminiError) throw cause;
+      lastError = cause;
+      const status = typeof cause === 'object' && cause !== null && 'status' in cause ? (cause as { status?: number }).status : undefined;
+      if (status !== undefined && status < 500 && status !== 429) {
+        throw asGeminiError(cause);
+      }
+    }
   }
+
+  throw asGeminiError(lastError);
 }
 
 /**
@@ -92,20 +109,32 @@ function readTranscript(parts: readonly Part[] | undefined): string | undefined 
 /** Pass 2 — a text-only `gemini-3.8-flash` call that may add structure and nothing else. */
 async function applyStructure(clean: string): Promise<string> {
   let text: string | undefined;
-  try {
-    const response = await gemini().models.generateContent({
-      model: STRUCTURE_MODEL,
-      contents: structurePrompt(clean),
-      config: {
-        systemInstruction: STRUCTURE_SYSTEM_INSTRUCTION,
-        temperature: 0,
-      },
-    });
-    text = response.text;
-  } catch (cause) {
-    throw asGeminiError(cause);
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= TRANSCRIBE_ATTEMPTS; attempt++) {
+    try {
+      const response = await gemini().models.generateContent({
+        model: STRUCTURE_MODEL,
+        contents: structurePrompt(clean),
+        config: {
+          systemInstruction: STRUCTURE_SYSTEM_INSTRUCTION,
+          temperature: 0,
+        },
+      });
+      text = response.text;
+      break;
+    } catch (cause) {
+      lastError = cause;
+      const status = typeof cause === 'object' && cause !== null && 'status' in cause ? (cause as { status?: number }).status : undefined;
+      if (status !== undefined && status < 500 && status !== 429) {
+        throw asGeminiError(cause);
+      }
+    }
   }
 
+  if (text === undefined && lastError) {
+    throw asGeminiError(lastError);
+  }
   if (text === undefined) throw blockedOrEmpty();
   // A structure pass that loses content is worse than no structure pass, so an
   // empty or drastically shorter result falls back to the clean transcript.

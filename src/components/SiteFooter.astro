@@ -1,0 +1,28 @@
+---
+/**
+ * Site footer — DESIGN.md `components.footer`.
+ *
+ *   Background {colors.canvas}, top hairline {colors.hairline},
+ *   body-grey text {colors.body}, type {typography.body-md},
+ *   padding {spacing.3xl} {spacing.lg}  →  64px 24px
+ *
+ * This is a **verbatim move** of the footer that used to be inlined in
+ * `index.astro`. Not one class was added, removed, or reordered during the
+ * extraction — the plan is explicit that a move which also changes pixels
+ * cannot be reviewed, because the two changes get conflated and a pixel
+ * regression has no way to be attributed. The link column DESIGN.md mentions
+ * ("Multi-column link groups under the wordmark") is deferred to Phase 3,
+ * when the routes it would point at actually exist.
+ */
+---
+
+<footer class="border-t border-hairline py-16">
+	<div class="container-page flex flex-col gap-8 sm:flex-row sm:items-baseline sm:justify-between">
+		<p class="text-sm leading-5 text-body">
+			GeminiTTS — <span class="text-ink">speech to text, text to speech</span>
+		</p>
+		<p class="font-mono text-xs leading-4 text-mute">
+			gemini-3.5-transcribe · gemini-3.8-flash-lite-tts
+		</p>
+	</div>
+</footer>

@@ -31,7 +31,7 @@ describe('liveSocketUrl', () => {
    */
   test('builds the documented v1beta constrained-endpoint URL', () => {
     expect(liveSocketUrl('tok-123')).toBe(
-      `${LIVE_WEBSOCKET_ORIGIN}/v1beta/ws/google.ai.BidiGenerateContentConstrained?access_token=tok-123`,
+      `${LIVE_WEBSOCKET_ORIGIN}/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContentConstrained?access_token=tok-123`,
     );
   });
 

@@ -17,10 +17,11 @@ export const POST: APIRoute = async ({ request }) => {
     let audio = requireString(body, 'audio', { maxLength: MAX_BASE64_CHARS }).replace(BASE64_PREFIX, '');
     if (audio.length === 0) throw new BadRequest('"audio" contained no data.');
 
-    const mimeType =
+    const rawMime =
       typeof body.mimeType === 'string' && body.mimeType.length > 0
         ? body.mimeType
         : 'audio/webm';
+    const mimeType = rawMime.split(';')[0].trim();
 
     const language = body.language ?? 'auto';
     if (!isLanguageId(language)) throw new BadRequest('"language" must be one of: auto, en, bn, hi.');

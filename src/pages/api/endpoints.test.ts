@@ -29,7 +29,7 @@ mock.module('../../lib/gemini/live-token', () => ({
   LIVE_WEBSOCKET_ORIGIN: 'wss://generativelanguage.googleapis.com',
   mintLiveToken,
   liveSocketUrl: (token: string) =>
-    `${'wss://generativelanguage.googleapis.com'}/v1beta/ws/google.ai.BidiGenerateContentConstrained?access_token=${encodeURIComponent(token)}`,
+    `${'wss://generativelanguage.googleapis.com'}/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContentConstrained?access_token=${encodeURIComponent(token)}`,
 }));
 
 const transcribe = mock(async () => ({ raw: 'raw text', text: 'structured text', structured: true }));

@@ -232,6 +232,60 @@
   }
 }
 
+/* The skip link's hidden and focused states.
+
+   Three attempts, all verified in the browser, and the reasons are worth
+   recording because the failure is invisible to a screenshot review — the
+   link was focusable the whole time, just 1x1px.
+
+   1. `focus:not-sr-only` beside a sibling `focus:absolute`. `:not()` takes its
+      argument's specificity, so the variant is 0,3,0 and its
+      `position: static` outranks 0,2,0. Link stayed collapsed.
+   2. `.skip-link:focus` in `@layer components`. Cascade layer order beats
+      specificity outright, and the file's opening
+      `@layer theme, base, components, utilities;` puts `utilities` last, so
+      `.sr-only` won no matter how specific this got.
+   3. `.skip-link:focus` in `@layer utilities`, after `.sr-only`. Correct
+      layer and later order, and still hidden in the browser.
+
+   Rather than keep fighting a class I do not control, this is now one
+   self-contained pair: the element always carries the visible base, and
+   `:not(:focus)` is the only thing that hides it. `.skip-link:not(:focus)` is
+   0,2,0 and simply stops matching once focused, so the show state needs no
+   counter-declaration and there is nothing to out-specify. `sr-only` is
+   removed from the element for the same reason — one owner for this
+   behaviour.
+
+   Generalises the note on `:focus-visible` below: when Tailwind variants
+   collide, the loser is decided by emission order, a generator implementation
+   detail the class list never states. Resolve such ties in CSS, where the
+   winning declaration sits beside the reason it wins — not by reordering
+   class names and hoping. */
+@layer utilities {
+  .skip-link {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    z-index: 50;
+    width: auto;
+    height: auto;
+    padding: 8px 12px;
+    margin: 0;
+    overflow: visible;
+    clip-path: none;
+    white-space: nowrap;
+  }
+
+  .skip-link:not(:focus) {
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+}
+
 /* The recording pulse is continuous motion, so it must yield to the user. */
 @media (prefers-reduced-motion: reduce) {
   *,

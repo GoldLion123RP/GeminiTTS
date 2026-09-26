@@ -102,5 +102,6 @@ export async function mintLiveToken(language: LanguageId = 'auto'): Promise<Live
  * minted, so the browser has nothing to specify.
  */
 export function liveSocketUrl(token: string): string {
-  return `${LIVE_WEBSOCKET_ORIGIN}/v1beta/ws/google.ai.BidiGenerateContentConstrained?access_token=${encodeURIComponent(token)}`;
+  return `${LIVE_WEBSOCKET_ORIGIN}/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContentConstrained?access_token=${encodeURIComponent(token)}`;
 }
+

@@ -605,8 +605,12 @@ const STOP_ICON = `<svg width="18" height="18" viewBox="0 0 24 24" fill="current
 				});
 			});
 
-			socket.addEventListener('message', (event) => {
-				const data = typeof event.data === 'string' ? event.data : '';
+			socket.addEventListener('message', async (event) => {
+				let rawData = event.data;
+				if (rawData instanceof Blob) {
+					rawData = await rawData.text();
+				}
+				const data = typeof rawData === 'string' ? rawData : '';
 				if (data.length === 0) return;
 
 				let parsed: { setupComplete?: unknown; serverContent?: Record<string, unknown> };
@@ -620,7 +624,7 @@ const STOP_ICON = `<svg width="18" height="18" viewBox="0 0 24 24" fill="current
 				// worklet is attached on the acknowledgement and not before.
 				if (parsed.setupComplete !== undefined) {
 					window.clearTimeout(timer);
-					attachAudioGraph();
+					await attachAudioGraph();
 					finish(true);
 					return;
 				}
@@ -674,8 +678,7 @@ const STOP_ICON = `<svg width="18" height="18" viewBox="0 0 24 24" fill="current
 	async function attachAudioGraph(): Promise<void> {
 		if (!mediaStream || !audioContext || workletNode) return;
 
-		const source = `<!doctype html>
-class Pcm16 extends AudioWorkletProcessor {
+		const source = `class Pcm16 extends AudioWorkletProcessor {
   process(inputs) {
     const channel = inputs[0]?.[0];
     if (channel && channel.length > 0) {
@@ -723,7 +726,12 @@ registerProcessor('gemini-pcm16', Pcm16);`;
 				// later reassignment of `pending`.
 				sendSocket({
 					realtimeInput: {
-						audio: { data: toBase64(frame.slice()), mimeType: `audio/pcm;rate=${LIVE_SAMPLE_RATE}` },
+						mediaChunks: [
+							{
+								mimeType: `audio/pcm;rate=${LIVE_SAMPLE_RATE}`,
+								data: toBase64(frame.slice()),
+							},
+						],
 					},
 				});
 				pending = pending.slice(FRAME_BYTES);
@@ -856,15 +864,18 @@ registerProcessor('gemini-pcm16', Pcm16);`;
 			stopping = false;
 			setMicState('idle');
 			setStatus('');
-			// The draft is left on screen. It is a genuine artefact of what
-			// was said, and throwing it away on a server failure would lose
-			// the user's words because of a network problem.
-			renderEmpty(
+			const errText =
 				error instanceof Error
 					? `The transcript could not be produced. ${error.message}`
-					: 'The transcript could not be produced.',
-			);
-			view?.copy.classList.remove('hidden');
+					: 'The transcript could not be produced.';
+			if (liveFinal.trim().length > 0) {
+				finalText = liveFinal.trim();
+				renderFinal(finalText, finalText, false);
+				setNotice(errText);
+			} else {
+				renderEmpty(errText);
+				view?.copy.classList.add('hidden');
+			}
 		}
 	}
 

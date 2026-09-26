@@ -19,7 +19,10 @@ import TtsPanel from '../components/TtsPanel.astro';
 		lede="Record speech and get clean, structured writing — or paste a document and hear it read back. English, বাংলা, हिन्दी, or let it auto-detect. Your API key never leaves this server."
 	/>
 
-	<main id="panels" class="container-page pb-24">
+	{/* `id="main"` is the skip link's target, mounted by SiteHeader. It was
+	    `id="panels"` until Phase 1.3; nothing referenced it, and a skip link
+	    pointing at a target that does not exist is silently inert. */}
+	<main id="main" class="container-page pb-24">
 		{/* SPEC §3.8: a 2-up card grid collapsing to one column below the
 		    documented breakpoint. Speech → Text is ordered first because that
 		    is the order the hero's lede describes. `items-start` stops the
@@ -29,18 +32,5 @@ import TtsPanel from '../components/TtsPanel.astro';
 			<TtsPanel />
 		</div>
 	</main>
-
-	{/* DESIGN.md `components.footer`: canvas background, top hairline, body
-	    grey text, {typography.body-md}, padding {spacing.3xl} {spacing.lg}
-	    → 64px 24px. */}
-	<footer class="border-t border-hairline py-16">
-		<div class="container-page flex flex-col gap-8 sm:flex-row sm:items-baseline sm:justify-between">
-			<p class="text-sm leading-5 text-body">
-				GeminiTTS — <span class="text-ink">speech to text, text to speech</span>
-			</p>
-			<p class="font-mono text-xs leading-4 text-mute">
-				gemini-3.5-transcribe · gemini-3.8-flash-lite-tts
-			</p>
-		</div>
-	</footer>
 </Layout>
+

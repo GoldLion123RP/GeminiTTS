@@ -1,5 +1,5 @@
 <!-- desc: Four-tier plan for the app shell (header/footer), the tri-state theme, the three-page split, and a browser-direct BYOK mode. -->
-Status: Review-Only | Doc-Type: Full
+Status: In Progress (Phase 0 complete, gate passed) | Doc-Type: Full
 
 # App Shell, Theme, Multi-Page Split & Browser-Direct BYOK — Implementation Plan
 
@@ -13,13 +13,13 @@ Status: Review-Only | Doc-Type: Full
 > Google's API-key documentation states under "Critical security rules": *"Never expose keys client-side in production: Do not hardcode API keys directly in web or mobile apps… To secure client-side apps, run a backend proxy server to make the actual API calls."*
 > **VERIFIED** [ai.google.dev/gemini-api/docs/api-key, fetched 2026-09-26].
 >
-> The user-selected design — browser → Gemini directly, key never touching our server — is the deliberate opposite of that guidance. It is a legitimate product choice (it gives us a zero-knowledge claim that is actually true, and it removes our key from the trust boundary entirely), but it must be an **informed** choice, and two of its three pillars are **unverified**:
+> The user-selected design — browser → Gemini directly, key never touching our server — is the deliberate opposite of that guidance. It is a legitimate product choice (it gives us a zero-knowledge claim that is actually true, and it removes our key from the trust boundary entirely), but it must be an **informed** choice. **Phase 0 has now measured all three pillars — see the Phase 0 verdict below. CORS: PASS. WebSocket: key must be a query parameter, so Live is excluded from BYOK. Portability: PASS. BYOK is now buildable as designed.**
 >
-> 1. **CORS is UNVERIFIED.** No official page fetched states that `generativelanguage.googleapis.com` permits browser origins. A `x-goog-api-key` header forces a preflight, and if the preflight is not answered the whole mode is dead on arrival. **Phase 0.1 is a blocking spike, not a formality.**
-> 2. **WebSocket auth is UNVERIFIED and probably requires a query parameter.** `new WebSocket()` in a browser cannot set request headers, so a Live-API socket must carry the key as a URL query parameter. That puts the key in browser history, in any proxy log, and in `Referer` headers. This is a real regression in key hygiene relative to today's server-minted ephemeral token and needs its own ruling.
+> 1. **CORS — RESOLVED, works.** VERIFIED empirically from a real `http://localhost` origin on 2026-09-26: the preflighted `x-goog-api-key` request returns a readable `400 API_KEY_INVALID`, and the wire response carries `access-control-allow-origin` echoing the origin. A refusal would have surfaced as a `TypeError` instead.
+> 2. **WebSocket auth — RESOLVED, and it is the one real cost.** VERIFIED: the Live handshake completes with no key at all, so auth is in-band and a browser cannot supply a header. The key must ride in `?key=`, which puts it in history and intermediary logs. **Live is therefore excluded from BYOK** and stays on the server-minted ephemeral token.
 > 3. **The docs also confirm two things that help us:** new AI Studio keys have been **auth keys** since 2026-05-28, and auth keys have *"fast-acting leaked key enforcement"* plus *"granular access control"* and are *"restricted to the Generative Language API (Gemini API) by default"* — **VERIFIED** [same source]. Unrestricted standard keys are now *rejected*. So the leaked-key blast radius for a browser-held key is materially smaller than it was a year ago, and the user is told to restrict to Gemini-API-only.
 >
-> **Ruling carried into the plan:** BYOK ships as an **opt-in mode that degrades to the server key**, and Phase 0 must produce a recorded go/no-go before Phase 4 touches UI. If CORS fails, the fallback (§2.2 Option C) is a *transit* proxy that forwards the user's key per request without storing it — a strictly smaller change, and the plan keeps the UI layer so only the transport swaps.
+> **Ruling carried into the plan:** BYOK ships as an **opt-in mode that degrades to the server key**. Phase 0 returned a **go**: CORS works, the audio pipeline is portable, and the single gap (Live) is confined to one feature. The Option B proxy fallback remains documented but is not needed.
 
 > [!WARNING] — **Free-tier quota is the binding constraint on the STT verification this project still owes.** The previous plan's largest open item is that the speech-to-text path has never been proven end-to-end against the real API, and that Smart mode may be silently downgrading to Verbatim. The user's chosen scope includes closing it. Repo memory records the free tier as **10 TTS requests/day + 3/min**, and calibration work burned requests until a 429. Sequencing matters: quota-expensive verification runs **last**, after the free work, or it starves.
 
@@ -85,18 +85,20 @@ Cost, stated honestly: this touches every component that names a colour directly
 
 | Option | Key touches our server? | CORS risk | Effort | Verdict |
 | --- | --- | --- | --- | --- |
-| **A. Browser → Gemini direct** | No | **Unverified — blocking** | High | Selected, gated on Phase 0 |
+| **A. Browser → Gemini direct** | No | **VERIFIED working (Phase 0.1)** | Medium | **Selected — gate passed** |
 | B. Per-request header proxy, never stored | Yes, in transit | None | Low | Fallback if A fails |
 | C. Browser → our server → Gemini, same as B | Yes | None | Low | Identical in practice to B |
 
 The honest framing: **A and B differ in trust model, not in user-visible capability.** A means our server is not in the path of the user's credential at all — a genuinely strong claim for a privacy-positioned tool. B means our server sees the key in a request header and must therefore be trusted with it, which is exactly the thing the user is trying to avoid, and which our access logs make worse.
 
+**Resolved by measurement:** A is viable. CORS works, so the zero-knowledge claim is real and achievable. The one concession is that the Live WebSocket stays server-side (§0.2), which narrows A's coverage to STT and TTS.
+
 So the real question is: **is the zero-knowledge claim worth the CORS risk?** If Phase 0 proves CORS works, yes, unambiguously. If it does not, the claim is unachievable and the plan degrades to B with an honest UI label ("your key is sent to our server for this request and never stored") rather than a claim it cannot keep.
 
-**Pre-mortem, option A — the specific ways it fails:**
-- *Preflight rejection.* `x-goog-api-key` is a non-simple header → `OPTIONS` preflight. If the API does not answer it, every request fails before the body is read. Symptom: a browser console CORS error with a perfectly valid key. **This is the single most likely failure and it is exactly what Phase 0.1 tests.**
-- *Referer leakage.* With the key in a header this is a non-issue; with a query param on the Live socket it is real.
-- *The server pipeline cannot be reused.* `synthesize.ts`, `chunk.ts`, `wav.ts`, `mammoth`, and `unpdf` are all Node/server modules. Browser-direct means either bundling `mammoth`/`unpdf` into the client or reimplementing extraction client-side. **This roughly doubles TTS client work and is the main reason option A is "High" effort.** The WAV assembly and chunking logic, however, are pure `ArrayBuffer` math and are portable — I need to verify `wav.ts` has no Node imports before committing to that.
+**Pre-mortem, option A — now resolved by measurement in Phase 0:**
+- *Preflight rejection* — **DID NOT OCCUR.** VERIFIED: the preflight is answered and `access-control-allow-origin` echoes the origin. This was predicted as the single most likely failure and it did not happen.
+- *Referer leakage* — **CONFIRMED, but scoped.** Real only on the Live WebSocket, which requires a query parameter. Resolved by excluding Live from BYOK rather than by accepting the leak. STT and TTS carry the key in a header and are unaffected.
+- *The server pipeline cannot be reused* — **DID NOT OCCUR for the audio path.** VERIFIED: `wav.ts` and `chunk.ts` have no Node imports and travel to the client unchanged, as does `estimate.ts` via its single dependency. The residual cost is narrower than estimated: only `mammoth`/`unpdf` document extraction and the `prompts/` structure are server-bound.
 - *Free-tier RPD is per project, not per key* — **VERIFIED** [ai.google.dev/gemini-api/docs/rate-limits, fetched 2026-09-26]. So a user's key and ours draw on the same project budget if they are the same project. This does not break BYOK, but it means the quota meter must count **requests the user made through us**, not assume a key implies a fresh budget.
 
 ### 2.3 Theme no-flash: the only mechanism that works
@@ -140,6 +142,24 @@ Each sub-phase lists goal, affected files, details, dependencies. `[NEW]` / `[MO
 - **Depends on:** nothing.
 
 **Gate:** 0.1 PASS **and** 0.2 answered **and** 0.3 recorded. Otherwise the plan is amended before Phase 4.
+
+#### Phase 0 verdict — 2026-09-26 — **GATE PASSED, all three sub-phases**
+
+**0.1 — CORS: PASS. VERIFIED empirically, not from docs.** Probed from a real `http://localhost` origin against both `v1beta` and `v1`:
+- Unauthenticated `GET /models` → `403 PERMISSION_DENIED`, body **readable by JS**.
+- With the `x-goog-api-key` header (forces the preflight) → `400 API_KEY_INVALID`, body **readable by JS**. A CORS refusal would have rejected with `TypeError`; instead the real upstream error came through.
+- Wire-level capture shows `access-control-allow-origin: http://localhost:64943` on both responses, confirming the preflight is answered.
+
+**Correction to the probe itself:** the probe page's own `res.headers.get('access-control-allow-origin')` printed `(absent)`. That read was wrong — Playwright's wire capture shows the header *is* present. The origin echo is confirmed; the in-page display is the unreliable half. Recorded because a tool that misreports is worse than no tool, and the first browser-only reading was nearly taken as the verdict.
+
+**0.2 — Live WebSocket: query parameter required. VERIFIED.**
+- The handshake **completes with no key at all** (`OPEN`, code `1000` on close) — so there is *no* handshake-level auth, and the browser cannot be relying on a request header.
+- Sending a setup frame with the key in `?key=` produced `CLOSE 1007 reason="API key not valid. Please pass a valid API key."` — the key demonstrably reached the server.
+- `new WebSocket()` cannot set request headers, so **the key must ride in the query string**, landing in history and any intermediary log. The pre-mortem risk predicted in §2.2 is confirmed real, not hypothetical.
+- **Ruling carried into Phase 4: Live stays on the server-minted ephemeral token, even under BYOK.** The Live socket is the one surface where browser-direct would put the key in the URL. BYOK covers STT and TTS; the UI states this limitation rather than hiding it. This is a deliberate, recorded capability gap.
+- Cost: **zero quota consumed** — an invalid key fails authentication before any generation is billed.
+
+**0.3 — Portability: PASS.** `wav.ts` and `chunk.ts` contain no Node built-ins — `Uint8Array`, `DataView`, and string/regex work only, with zero `import` statements. Both move to the client unchanged under BYOK, as do their tests. `estimate.ts` depends only on `chunk.ts` and therefore also travels. The reimplementation risk raised in §2.2 did not materialise.
 
 ### Phase 1 — App shell: header and footer
 
@@ -213,14 +233,14 @@ Each sub-phase lists goal, affected files, details, dependencies. `[NEW]` / `[MO
 
 ## 4. Progress Checklist
 
-- [ ] **Phase 0 — BYOK feasibility (BLOCKING)**
-  - [ ] 0.1 CORS spike from a real browser, recorded PASS/FAIL
-  - [ ] 0.2 Live WebSocket auth question settled + hygiene ruling
-  - [ ] 0.3 `wav.ts` / `chunk.ts` Node-freedom audit recorded
-- [ ] **Phase 1 — Shell**
-  - [ ] 1.1 Extract `SiteFooter.astro` (no restyle)
-  - [ ] 1.2 `SiteHeader.astro` with `aria-current` + skip link
-  - [ ] 1.3 Both mounted in `Layout.astro`, `#main` target
+- [x] **Phase 0 — BYOK feasibility (BLOCKING) — COMPLETE 2026-09-26, GATE PASSED**
+  - [x] 0.1 CORS spike from a real browser — **PASS**, VERIFIED
+  - [x] 0.2 Live WebSocket auth question settled — query param required; **Live excluded from BYOK**
+  - [x] 0.3 `wav.ts` / `chunk.ts` Node-freedom audit — **PASS**, portable
+- [x] **Phase 1 — Shell — COMPLETE 2026-09-26**
+  - [x] 1.1 Extract `SiteFooter.astro` (no restyle)
+  - [x] 1.2 `SiteHeader.astro` with `aria-current` + skip link
+  - [x] 1.3 Both mounted in `Layout.astro`, `#main` target
 - [ ] **Phase 2 — Theme**
   - [ ] 2.1 Semantic surface tokens (`DESIGN.md` updated same turn)
   - [ ] 2.2 Dark ramp + `data-theme`, mesh untouched
@@ -272,3 +292,5 @@ Each sub-phase lists goal, affected files, details, dependencies. `[NEW]` / `[MO
 | Date | Entry |
 | --- | --- |
 | 2026-09-26 | Plan drafted, `Status: Review-Only`. Recorded the Google-guidance conflict against browser-direct BYOK, the unverified CORS and WebSocket-auth pillars, and the per-project (not per-key) quota finding. No phase executed. |
+| 2026-09-26 | **Phase 0 executed — GATE PASSED, BYOK is buildable as designed.** Baseline green first: `bun run build` clean, `bun run check` 0 errors, `bun test` 148 pass / 0 fail / 4408 assertions. 0.1 CORS **VERIFIED PASS** from a real `http://localhost` origin on both `v1beta` and `v1` — the preflighted `x-goog-api-key` request returns a readable `400 API_KEY_INVALID` and the wire response echoes `access-control-allow-origin`. The predicted blocking failure did not occur. 0.2 **the key must be a WebSocket query parameter** — the handshake completes with no key at all (code `1000`), so auth is in-band and a browser cannot send a header; a setup frame with `?key=` closed `1007 API_KEY_INVALID`, proving the key reached the server. **Ruling: Live is excluded from BYOK** and keeps the server-minted ephemeral token. 0.3 **PASS** — `wav.ts`/`chunk.ts` contain no Node built-ins and travel client-side unchanged. Probe consumed **zero quota**. Scratch file deleted. Next: Phase 1. |
+| 2026-09-26 | **Phase 1 executed — app shell complete.** `SiteFooter.astro` extracted from `index.astro` **verbatim** (not one class added, removed, or reordered); `SiteHeader.astro` and `SiteFooter.astro` mounted in `Layout.astro` inside a `min-h-dvh` flex column so every future route inherits the chrome. New `src/lib/nav.ts` is the single source of truth for the route list, carrying the two Phase 3 routes as `implemented: false` so the header never links a 404 — Phase 3 only flips two flags. **Three routing decisions worth keeping:** (a) nav links are `nav-link` with `rounded-full`, NOT the plan's suggested `rounded-app`; `rounded-app` is `button-primary-sm`/`button-ghost-sm`, the Sign Up / Log In buttons, and DESIGN.md's Don'ts forbid mixing the two button shapes in one context. (b) The header background is the literal `{colors.canvas}`, not a translucent variant — the blur was reverted as an unsanctioned flourish in a system whose only flourish is the hero mesh. (c) The mobile trigger is omitted entirely while only one route exists; a hamburger opening a single link is a control that lies about what it controls. `index.astro`'s `<main id="panels">` became `id="main"`, the skip link's target — nothing referenced the old id, and a skip link pointing at a nonexistent target is silently inert. New `src/lib/nav.test.ts` adds 16 tests (148 → 164). **A real bug was caught and fixed, and the fix is the most transferable finding of the phase:** the skip link was focusable but *invisible*. `focus:not-sr-only` is 0,3,0 because `:not()` takes its argument's specificity, so it outranked a sibling `focus:absolute` (0,2,0) and reset `position` to `static`, leaving the link at its 1×1px `sr-only` box. Moving the rule to `@layer components` did **not** fix it — cascade layer order beats specificity outright, and this file's opening `@layer theme, base, components, utilities;` puts `utilities` last, so `.sr-only` won regardless. Even relocating it into `@layer utilities` after `.sr-only` still failed in the browser. Resolution: one self-contained `.skip-link` pair in the utilities layer — always-visible base plus `.skip-link:not(:focus)` to hide — and `sr-only` removed from the element, so there is nothing left to out-specify. **This is the same class of trap as the `recording`/`latin` variant tie in Phase 4 and the `:focus-visible` note in `global.css`; the general rule is that Tailwind variant ties are settled by emission order, an implementation detail the class list never states, so they must be resolved in CSS beside the reason they win.** The failure was invisible to screenshots — a visual review alone would have shipped it. Gates: `build` Complete, `check` 0 errors over 46 files, `bun test` 164 pass / 0 fail. Verified in-browser: first Tab lands on the skip link, it becomes visible with the `{colors.link}` focus ring, Enter jumps to `#main`, `aria-current="page"` lands on both wordmark and Home link. **Tooling caveats recorded:** `run_playwright_code` does not execute in this environment (a `document.body.style.outline` probe never applied) — computed-style assertions must go through served HTML/CSS; and scrolling + `scrollIntoView` time out in the integrated browser, so full-page render checks need another route. Next: Phase 2 (theme). |
