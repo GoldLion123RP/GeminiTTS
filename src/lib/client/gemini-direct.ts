@@ -44,6 +44,25 @@ const MAX_INLINE_AUDIO_BYTES = 20 * 1024 * 1024;
 /** One retry per chunk, matching `CHUNK_ATTEMPTS`. */
 const CHUNK_ATTEMPTS = 2;
 
+/**
+ * The status a network-level failure is reported as.
+ *
+ * PHASE 5 FIX. This was `0`, following the `fetch` convention where a thrown
+ * `TypeError` means "no response". That is fine as a *value* and illegal as a
+ * `Response` status: the WHATWG spec requires 200–599, and
+ * `new Response(body, { status: 0 })` throws `RangeError` in every browser.
+ * So the network branch never returned a Response at all — it threw past every
+ * `try`/`catch` that expected one, and the user saw the vaguest possible
+ * failure instead of "check your connection". Caught by
+ * `client/retry.test.ts`, which could not even construct the response it was
+ * asserting on.
+ *
+ * 502 is the honest answer: we could not get an answer from Gemini. It is also
+ * the status Phase 5.2's retry layer deliberately refuses to retry, because a
+ * request that may have been delivered and generated must not be re-sent.
+ */
+const UNREACHABLE = 502;
+
 /** A `Response` with the same body shape `api-response.failure()` produces. */
 function fail(message: string, status: number, detail?: string): Response {
   return new Response(JSON.stringify({ error: message, detail }), {
@@ -98,8 +117,23 @@ const UPSTREAM_STATUS = Symbol('upstreamStatus');
 
 /** The status a failed request should be *retried* on, ignoring UI remapping. */
 function retryableStatus(response: Response): number {
+  return upstreamStatusOf(response) ?? response.status;
+}
+
+/**
+ * Reads the real upstream status off a failed response, if the transport
+ * attached one.
+ *
+ * Exported (rather than kept private behind `retryableStatus`) so Phase 5.2's
+ * retry layer can be handed this reader and make its decision off the
+ * upstream number too. Without it, `withRetry` would see a 502 where Gemini
+ * said 400 and would re-send a billable request for an input that can never
+ * succeed — the exact bug the symbol was introduced to prevent, reintroduced
+ * one layer up.
+ */
+export function upstreamStatusOf(response: Response): number | undefined {
   const carried = (response as unknown as Record<symbol, unknown>)[UPSTREAM_STATUS];
-  return typeof carried === 'number' ? carried : response.status;
+  return typeof carried === 'number' ? carried : undefined;
 }
 
 interface GeminiReply {
@@ -132,7 +166,7 @@ async function generateContent(
     });
   } catch (cause) {
     if (cause instanceof DOMException && cause.name === 'AbortError') throw cause;
-    return fail('The request to Gemini could not be completed. Check your connection.', 0, String(cause));
+    return fail('The request to Gemini could not be completed. Check your connection.', UNREACHABLE, String(cause));
   }
 
   if (response.ok) return response;
@@ -350,10 +384,10 @@ async function transcribeClean(
     if (upstream < 500 || upstream === 429) break;
   }
 
-  if (last && !last.ok && last.status !== 0) return { ok: false, response: last };
+  if (last && !last.ok) return { ok: false, response: last };
   // Both attempts failed at the network layer, so there is no upstream Response
   // to forward. Synthesised here so the caller still gets a renderable body.
-  return { ok: false, response: fail('The request to Gemini could not be completed. Check your connection.', 0) };
+  return { ok: false, response: fail('The request to Gemini could not be completed. Check your connection.', UNREACHABLE) };
 }
 
 async function applyStructure(key: string, clean: string): Promise<string | null> {

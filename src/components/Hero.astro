@@ -55,7 +55,11 @@ const { eyebrow, title, lede, compact = false } = Astro.props;
 		</p>
 		<h1
 			class:list={[
-				'mt-6 max-w-4xl font-semibold tracking-normal text-ink',
+				// `text-balance` (Phase 5.4): a display headline is exactly the
+				// case the property exists for. Without it a two-word title can
+				// leave one word alone on a second line, and because these
+				// headlines sit at 48–60px a ragged last line is very visible.
+				'mt-6 max-w-4xl text-balance font-semibold tracking-normal text-ink',
 				compact
 					? 'text-3xl leading-10 md:text-heading-lg lg:text-display-xl latin:tracking-[-0.026em]'
 					: 'text-4xl leading-none md:text-display-xl lg:text-6xl latin:tracking-[-0.04em]',

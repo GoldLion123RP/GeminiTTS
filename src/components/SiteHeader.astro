@@ -102,7 +102,13 @@ const items = visibleNavItems();
 
 		{/* Mobile trigger. Only rendered when there is more than one route —
 		    a hamburger that opens a single link is a control that lies about
-		    what it controls. */}
+		    what it controls.
+
+		    PHASE 5.4: `size-10` (40px), up from `h-9 w-9` (36px). Phase 3
+		    already settled on 40px as the floor for a control this small, and
+		    the trigger was missed. It is the only header control a phone user
+		    has to hit to reach navigation, so it is the one least affordance
+		    to spare. It still fits the 56px row with 8px to spare. */}
 		{
 			items.length > 1 && (
 				<button
@@ -110,7 +116,7 @@ const items = visibleNavItems();
 					id="nav-menu-trigger"
 					aria-expanded="false"
 					aria-controls="nav-menu"
-					class="inline-flex h-9 w-9 items-center justify-center rounded-app border border-hairline bg-elevated text-ink sm:hidden"
+					class="inline-flex size-10 items-center justify-center rounded-app border border-hairline bg-elevated text-ink sm:hidden"
 				>
 					<span class="sr-only">Open navigation menu</span>
 					<svg

@@ -7,10 +7,19 @@ export class BadRequest extends Error {
   }
 }
 
-export function json(body: unknown, status = 200): Response {
+/**
+ * A JSON body with the content type every route in this app speaks.
+ *
+ * `headers` was added in Phase 5.1 for `/api/health`'s `cache-control:
+ * no-store`. It merges rather than replaces, so `content-type` cannot be
+ * dropped by a caller who only wanted to add a cache directive — a header map
+ * that replaced wholesale would let a future route quietly serve JSON as
+ * `text/plain`.
+ */
+export function json(body: unknown, status = 200, headers: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { 'content-type': 'application/json; charset=utf-8' },
+    headers: { 'content-type': 'application/json; charset=utf-8', ...headers },
   });
 }
 

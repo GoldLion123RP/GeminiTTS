@@ -54,14 +54,14 @@ const options = [
 		{
 			options.map((option) => (
 				<label
-					class="relative cursor-pointer rounded-app px-2 py-1 text-xs leading-4 font-medium text-body transition-colors has-[:checked]:bg-hairline-soft has-[:checked]:text-ink has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-link"
+					class="relative cursor-pointer rounded-app px-2 py-1 text-xs leading-4 font-medium text-body transition-colors has-checked:bg-hairline-soft has-checked:text-ink has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-link"
 				>
 					{/*
 						`opacity-0` rather than `sr-only`: the input must stay
 						hittable and focusable, and it must span the label so
 						the whole pill is the hit target.
 
-						The focus ring is drawn on the LABEL via `has-[:focus-visible]`
+						The focus ring is drawn on the LABEL via `has-focus-visible:`
 						instead of on the input. Left on the input, the ring would
 						trace that element's own square border-box — a square
 						outline around a 6px-rounded pill, which is the sort of

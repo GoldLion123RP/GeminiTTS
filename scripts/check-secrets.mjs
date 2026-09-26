@@ -39,7 +39,7 @@
 
 import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, relative, sep } from 'node:path';
+import { join, relative } from 'node:path';
 
 /** The only files worth reading: text, and small enough to scan. */
 const TEXT_EXTENSIONS = new Set(['.js', '.mjs', '.cjs', '.html', '.css', '.json', '.map', '.txt', '.astro']);
@@ -50,11 +50,41 @@ const KEY_PATTERN = /AIza[0-9A-Za-z_-]{20,}/g;
 
 const DIST = 'dist';
 
-/** The one file permitted to attach stored key material to a request. */
 const KEY_HEADER = 'x-goog-api-key';
-const ALLOWED_KEY_SOURCE = join('src', 'lib', 'client', 'gemini-direct.ts');
+
 /** The only host a browser-side transport may address. */
 const ALLOWED_HOST = 'generativelanguage.googleapis.com';
+
+/**
+ * The files permitted to attach the key header, each for a stated reason.
+ *
+ * This is an allowlist of *two* because there are two genuinely different keys
+ * in this app, and conflating them would be the mistake:
+ *
+ *   1. `gemini-direct.ts` — the USER's key, read from browser storage and sent
+ *      straight to Google. This is the path Phase 4 built, and the reason the
+ *      rule exists: a browser key must never be routed anywhere else.
+ *
+ *   2. `health.ts` — OUR key, read from `process.env` on the server and sent to
+ *      the same host, to answer "is this key configured?". Added in Phase 5.1.
+ *      It is a different credential from a different place with a different
+ *      trust model, and the leak this rule guards against — a *stored user key*
+ *      reaching our server or a third party — cannot occur in a module that
+ *      never imports `lib/client/keystore.ts`.
+ *
+ * The alternative was to route the probe through `@google/genai` (which
+ * attaches auth headers internally and so would slip past this gate entirely).
+ * Preferring an explicit, greppable header over an invisible SDK mechanism is
+ * the better trade: this gate can now see the call, and adding a third file
+ * here has to be a deliberate edit.
+ */
+const ALLOWED_KEY_SOURCES = new Set([
+	join('src', 'lib', 'client', 'gemini-direct.ts'),
+	join('src', 'lib', 'gemini', 'health.ts'),
+]);
+
+/** Test files that name the header in an assertion string. They attach nothing. */
+const ASSERTION_ONLY = new Set([join('src', 'lib', 'client', 'provider.test.ts'), join('src', 'lib', 'gemini', 'health.test.ts')]);
 
 let failures = 0;
 const fail = (message) => {
@@ -185,18 +215,17 @@ if (headerUses.length === 0) {
 }
 for (const use of headerUses) {
 	const file = use.split(':')[0];
-	// The transport's own test names the header in an assertion string; it
-	// attaches nothing. Only the transport may attach it.
-	if (file === ALLOWED_KEY_SOURCE || file.endsWith(`${sep}provider.test.ts`)) continue;
-	fail(`${use} attaches ${KEY_HEADER} outside ${ALLOWED_KEY_SOURCE}`);
+	if (ALLOWED_KEY_SOURCES.has(file) || ASSERTION_ONLY.has(file)) continue;
+	fail(`${use} attaches ${KEY_HEADER}, which is confined to ${[...ALLOWED_KEY_SOURCES].join(' and ')}`);
 }
 if (headerUses.length > 0) {
-	console.log(`pass  ${KEY_HEADER} is confined to ${ALLOWED_KEY_SOURCE}`);
+	console.log(`pass  ${KEY_HEADER} is confined to ${[...ALLOWED_KEY_SOURCES].join(' and ')}`);
 }
 
-const transport = readFileSync(ALLOWED_KEY_SOURCE, 'utf8');
+const BROWSER_TRANSPORT = join('src', 'lib', 'client', 'gemini-direct.ts');
+const transport = readFileSync(BROWSER_TRANSPORT, 'utf8');
 if (!transport.includes(ALLOWED_HOST)) {
-	fail(`${ALLOWED_KEY_SOURCE} does not reference ${ALLOWED_HOST} — the browser transport is pointing somewhere unexpected.`);
+	fail(`${BROWSER_TRANSPORT} does not reference ${ALLOWED_HOST} — the browser transport is pointing somewhere unexpected.`);
 } else {
 	console.log(`pass  the browser transport targets ${ALLOWED_HOST}`);
 }
@@ -205,7 +234,7 @@ if (!transport.includes(ALLOWED_HOST)) {
 // interpolated into a URL. `?key=` in a fetch template is the Phase 0.2 leak.
 const urlLeak = /`[^`]*\$\{key\}[^`]*`|\?key=/.exec(stripComments(transport));
 if (urlLeak) {
-	fail(`${ALLOWED_KEY_SOURCE} formats the key into a URL (${urlLeak[0].slice(0, 40)}). Live is the only surface allowed that, and it is server-side.`);
+	fail(`${BROWSER_TRANSPORT} formats the key into a URL (${urlLeak[0].slice(0, 40)}). Live is the only surface allowed that, and it is server-side.`);
 } else {
 	console.log('pass  the key is never interpolated into a URL');
 }

@@ -91,9 +91,10 @@ whether the built server can see it.
 | `bun run preview` | Serve the production build locally |
 | `bun run check` | Type check — `astro check`, must report zero errors |
 | `bun run start` | Run the built server, **loading `.env`** (see the warning below) |
-| `bun run smoke` | Start the built server and check the page, both tools on their own routes, and key visibility |
+| `bun run smoke` | Start the built server and check the page, both tools on their own routes, the shared chrome, `/api/health`, and key visibility |
 | `bun test` | Unit tests (`bun test` is built in — no test framework dependency) |
 | `bun run check:secrets` | Scan `dist/` and the client source for key material (run after `build`) |
+| `bun run check:routes` | Assert no test file under `src/pages/` ships as a live route (run after `build`) |
 | `bunx astro --help` | Astro CLI reference |
 
 `bun run check` and `bun run build` are the two gates. Run both before opening a
@@ -162,9 +163,21 @@ Output mode is `server`, so routes are rendered on demand by the Node adapter
 unless a page opts out with `prerender = true`. There is no `public/` HTML and no
 SPA fallback.
 
-API endpoints will live at `src/pages/api/*.ts` and are server-only — that is the
+API endpoints live at `src/pages/api/*.ts` and are server-only — that is the
 point of `output: 'server'`, and the reason the Gemini key can stay out of the
 browser.
+
+> [!CAUTION]
+> **Everything under `src/pages/` is a URL.** A test file placed there is built
+> as a live route and served from `dist/server/` — this happened with
+> `src/pages/api/endpoints.test.ts`, which shipped the whole test suite at
+> `/api/endpoints.test`. Tests go in `src/lib/**` beside the module they cover,
+> or in `src/tests/`. `bun run check:routes` fails the build if one reappears.
+
+`GET /api/health` reports whether the key is `configured`, `missing`, `invalid`,
+`quota_exhausted`, or `unknown` — the distinction a 500 used to collapse, which
+is what made a rejected key look like a missing one. It answers `200` for every
+state and costs no quota: it reads `models?pageSize=1`, never a generation.
 
 ---
 

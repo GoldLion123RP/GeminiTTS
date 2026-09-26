@@ -1,0 +1,157 @@
+---
+/**
+ * The request meter — Phase 5.3.
+ *
+ * WHAT THE COPY IS ALLOWED TO CLAIM
+ *
+ * This component counts what *this browser* sent, and nothing else. The copy
+ * says "requests from this device" for the same reason the plan's §2.4 did:
+ * a local counter that called itself a quota reading would be asserting
+ * knowledge the browser does not have. Under the server provider the real
+ * budget is Google's project, and under BYOK it is the user's — and in both
+ * cases this number is a *nudge before the tenth request*, not an enforcement
+ * mechanism. There is no way for it to stop anything, so it does not pretend
+ * to.
+ *
+ * The free-tier figures quoted (10 a day, 3 a minute, resetting at midnight
+ * Pacific) come from the recorded rate-limits page; the meter shows the local
+ * count next to them rather than as a percentage, because a percentage would
+ * imply a denominator this browser cannot see.
+ *
+ * SHAPE
+ *
+ * The quiet `rounded-app` hairline well already used for `SttPanel`'s
+ * degradation notice and `ByokSettings`' security statement. Not a
+ * `feature-card`: this is an inline readout, not a tile, and promoting it to a
+ * card would give it more visual weight than a local log deserves.
+ *
+ * NO NEW TOKENS. Colours, radii, and type are the same ones those two panels
+ * already use — `text-xl` is `{typography.heading-md}`, the same 20/28 step the
+ * panel headings use. There is no `2xl` type token in this design system, so a
+ * 24px count would have been an invented size.
+ */
+---
+
+<section
+	id="quota"
+	class="mt-6 rounded-app border border-hairline bg-hairline-soft p-4"
+	aria-labelledby="quota-heading"
+>
+	<div class="flex flex-wrap items-baseline justify-between gap-3">
+		<h2
+			id="quota-heading"
+			class="font-mono text-xs leading-4 font-medium tracking-normal text-mute uppercase"
+		>
+			Requests today
+		</h2>
+		<p id="quota-scope" class="text-xs leading-4 text-mute"></p>
+	</div>
+
+	{/* `tabular-nums` (Phase 5.4): the count changes in place while the user
+	    is working. Proportional digits make a changing number jitter sideways,
+	    which reads as the layout moving. The other numbers on screen already
+	    carry this — see `TtsPanel`'s estimate grid. */}
+	<p
+		id="quota-count"
+		class="mt-2 text-xl leading-7 font-semibold tracking-normal text-ink tabular-nums"
+	>
+		—
+	</p>
+	<p id="quota-detail" class="mt-1 text-xs leading-4 text-body"></p>
+	<p class="mt-3 text-xs leading-4 text-mute">
+		On the free tier, Gemini allows 10 text-to-speech requests a day and 3 a minute, resetting at
+		midnight Pacific. This page can count what this browser sent; it cannot see what Gemini has
+		left.
+	</p>
+
+	<div class="mt-3 flex flex-wrap items-center gap-2">
+		<label
+			for="quota-remember"
+			class="flex cursor-pointer items-center gap-2 rounded-app border border-hairline bg-elevated px-3 py-2 text-sm leading-5 text-ink"
+		>
+			<input
+				id="quota-remember"
+				type="checkbox"
+				class="size-4 shrink-0 cursor-pointer accent-ink"
+			/>
+			<span>Keep this log on this device</span>
+		</label>
+		<button
+			id="quota-clear"
+			type="button"
+			class="cursor-pointer rounded-app border border-hairline bg-elevated px-2 py-1 text-sm leading-5 font-medium text-ink"
+		>
+			Reset count
+		</button>
+	</div>
+</section>
+
+<script>
+	// Phase 5.3 behaviour. Same shape as every other panel: vanilla DOM, no
+	// framework, and every dynamic value written with `textContent` so a number
+	// from storage can never become markup.
+	import { clearSpend, setRememberSpend, SPEND_EVENT, summariseSpend } from '../lib/client/quota';
+
+	const panel = document.getElementById('quota');
+	if (panel) {
+		const count = panel.querySelector<HTMLElement>('#quota-count');
+		const detail = panel.querySelector<HTMLElement>('#quota-detail');
+		const scope = panel.querySelector<HTMLElement>('#quota-scope');
+		const remember = panel.querySelector<HTMLInputElement>('#quota-remember');
+		const clear = panel.querySelector<HTMLButtonElement>('#quota-clear');
+
+		/**
+		 * `role="status"` would announce the number on every redraw, which for
+		 * a counter that ticks up mid-task is noise rather than information.
+		 * The heading already names the region, and the count is a static read
+		 * for anyone who navigates to it.
+		 */
+		function render(): void {
+			const summary = summariseSpend();
+			if (remember) remember.checked = summary.remembered;
+			if (count) {
+				count.textContent = summary.today === 0 ? 'None yet' : summary.today.toLocaleString();
+			}
+			if (scope) {
+				// `day` is rendered verbatim from `Intl.DateTimeFormat('en-CA')`,
+				// which is ISO `YYYY-MM-DD`. A user reading a date does not need
+				// to be told it is in Pacific time — the sentence underneath
+				// already says when the counter rolls over.
+				scope.textContent = `${summary.day} · Pacific time`;
+			}
+			if (detail) {
+				const parts: string[] = [];
+				if (summary.byok > 0) {
+					parts.push(
+						`${summary.byok.toLocaleString()} sent with your own key, the rest through this app's server.`,
+					);
+				} else if (summary.today > 0) {
+					parts.push("All of them went through this app's server.");
+				}
+				if (summary.failed > 0) {
+					parts.push(
+						`${summary.failed.toLocaleString()} of those did not complete — a failed request is usually not charged.`,
+					);
+				}
+				parts.push(
+					summary.remembered
+						? 'This log is kept on this device between visits.'
+						: 'This log lasts until you close the tab.',
+				);
+				detail.textContent = parts.join(' ');
+			}
+		}
+
+		remember?.addEventListener('change', () => setRememberSpend(remember.checked));
+		clear?.addEventListener('click', () => {
+			clearSpend();
+			render();
+		});
+
+		// The seam announces every recorded request, so the count moves with the
+		// work instead of needing a poll or a manual refresh.
+		window.addEventListener(SPEND_EVENT, render);
+
+		render();
+	}
+</script>

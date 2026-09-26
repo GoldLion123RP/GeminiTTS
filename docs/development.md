@@ -13,13 +13,14 @@ Detail behind [`AGENTS.md`](../AGENTS.md). Read on demand.
 | `bun run dev` | Dev server with HMR at `http://localhost:4321` |
 | `bun run build` | Production build into `./dist/` |
 | `bun run start` | Run the built server, loading `.env` via Node's `--env-file-if-exists` |
-| `bun run smoke` | Start the built server and check the page, both tools on their own routes, and key visibility |
+| `bun run smoke` | Start the built server and check the page, both tools on their own routes, the shared chrome, `/api/health`, and key visibility |
 | `bun run preview` | Serve the production build locally |
 | `bun run check` | Type check — `astro check`, must report zero errors |
 | `bunx astro --help` | Astro CLI reference |
 | `bun run docs:sync` | Regenerate `docs/README.md` and `docs/archive/README.md` |
 | `bun run check:contrast` | Recompute the WCAG contrast of every text token on every surface, both themes |
 | `bun run check:secrets` | Scan `dist/` and the client source for key material; run after `bun run build` |
+| `bun run check:routes` | Assert no test file under `src/pages/` is shipped as a live route; run after `bun run build` |
 
 `bun run build` and `bun run check` are the two gates. Run both before opening a
 pull request. There is no CI enforcing them yet.
@@ -122,10 +123,22 @@ bun run check:secrets
 ```
 
 It scans `dist/` for a key *shape* (`AIza…`), then asserts in the source that
-only `gemini-direct.ts` attaches `x-goog-api-key`, that its host is Google, and
-that the key is never interpolated into a URL. Matches are reported as
-`file:line`, never as content, so the gate cannot leak the thing it is looking
-for.
+only `gemini-direct.ts` and `health.ts` attach `x-goog-api-key`, that the browser
+transport's host is Google, and that the key is never interpolated into a URL.
+Matches are reported as `file:line`, never as content, so the gate cannot leak
+the thing it is looking for.
+
+Two files are allowed to attach that header, because there are two different
+keys in this app and conflating them would be the mistake:
+
+| File | Key | Read from |
+| :--- | :--- | :--- |
+| `src/lib/client/gemini-direct.ts` | the **user's** key, in the browser | `sessionStorage` / `localStorage` |
+| `src/lib/gemini/health.ts` | **our** key, on the server | `process.env.GEMINI_API_KEY` |
+
+The health probe can never leak a stored user key because it never imports
+`lib/client/keystore.ts`. Adding a third file to that allowlist is a deliberate
+edit with a stated reason, which is the point.
 
 **It carries a positive control, and that is the point.** This repo has already
 produced a false pass twice from `Select-String -Path "dist\**"` matching 1 of
@@ -143,6 +156,85 @@ that. A gate that cries wolf on its own documentation gets ignored.
 What it cannot prove: what a browser does at runtime. The "never reaches our
 origin" claim rests on the routing tests, which capture the actual `fetch` URLs.
 
+### `bun run check:routes`
+
+```
+bun run build
+bun run check:routes
+```
+
+Every file under `src/pages/` is a route — that is Astro's contract, and it has
+teeth. `src/pages/api/endpoints.test.ts` therefore shipped as a **production
+route** at `/api/endpoints.test` whose component was a test file importing
+`bun:test`, putting the whole suite into `dist/server/`. It is found by
+`check:secrets` reporting a key-shaped literal at
+`dist/server/chunks/endpoints_*.mjs`; the literal was fake, so a gate that only
+looked for *real* secrets would have passed. The test now lives in `src/tests/`,
+and this gate keeps it there. It carries the same positive control as the other
+two: a planted file the detector must reject.
+
+**Where tests go.** `src/lib/**` and `src/tests/`, never `src/pages/`. A test
+beside the module it covers is fine; a test inside the routing tree is a URL.
+
+## Diagnosing a rejected or missing key
+
+```
+bun run build
+bun run smoke
+```
+
+`bun run smoke` calls `GET /api/health` and prints its `state`, then uses that
+state to name the cause. The four states are the point — the previous
+behaviour inferred "no `.env`" by pattern-matching the words
+`GEMINI_API_KEY is not set` in a 500 body, so any rewording of that message
+broke the diagnosis and a key rejected by Google was reported as a key that was
+never loaded.
+
+| `state` | Meaning | What to do |
+| :--- | :--- | :--- |
+| `configured` | Gemini accepted the key | nothing |
+| `missing` | no key in the server's environment | use `bun run dev` or `bun run start`; a bare `node dist/server/entry.mjs` loads no `.env` |
+| `invalid` | a key is present and Gemini rejected it | the `.env` is being read; the credential is the problem |
+| `quota_exhausted` | the key works, the project is out of budget | free-tier limits reset at midnight Pacific |
+| `unknown` | the probe could not reach a conclusion | treat as a network problem, not a key problem |
+
+The probe reads `models?pageSize=1`, never a `generateContent` call, so it costs
+no quota — a health check that spends the budget manufactures the outage it is
+looking for. The route answers `200` for every state, because it reports *what
+state the key is in*, not *whether the process is alive*; a 429 for an exhausted
+quota would page a human for a condition no human action fixes. `state` is the
+contract.
+
+## Retries, and which failures are worth a second attempt
+
+`src/lib/client/retry.ts` wraps every request at the provider seam, with
+exponential backoff and **full jitter**, and retries exactly two statuses: `429`
+and `503`.
+
+Not `502`, and not a network error. Both are reported as 502 because both mean
+"no answer from Gemini" — and in either case the request may already have been
+generated and billed upstream, so re-sending re-spends the user's quota. A
+`400` remapped to `502` for display is the same trap: the real upstream status
+rides out of band and the retry layer reads *that*, never the number the UI
+renders.
+
+The asymmetry is deliberate. This app talks to a free tier with a hard daily
+ceiling, so over-eager retrying spends money that is already spent, while
+under-eager retrying produces a message that says "try again" — which the UI
+already offers as an explicit button.
+
+## The request meter is a log, not a limiter
+
+`QuotaMeter.astro` counts the requests *this browser* made today and nothing
+else. The copy says so, because the browser cannot know the provider's real
+remaining budget: under the server key the counter lives in Google's project,
+and under BYOK it lives in the user's.
+
+Days are bucketed in **Pacific time**, because that is when Gemini's free-tier
+daily limit resets. Bucketing by the reader's local day would show a reset at
+midnight for a user in Kolkata — nine and a half hours early — and would invite
+exactly the over-spend the meter exists to prevent.
+
 ## Project structure
 
 ```text
@@ -154,6 +246,7 @@ origin" claim rests on the routing tests, which capture the actual `fetch` URLs.
 │   ├── layouts/                # page shells — Layout.astro imports global.css
 │   ├── pages/                  # file-based routing; api/*.ts are server-only
 │   ├── lib/client/             # browser-only: provider seam, keystore, BYOK transport
+│   ├── tests/                  # tests that must not become routes (see check:routes)
 │   ├── styles/global.css       # Tailwind entry — @import 'tailwindcss'
 │   └── env.d.ts                # typed GEMINI_API_KEY declaration
 ├── docs/                       # documentation (see docs/README.md)
@@ -199,7 +292,7 @@ alongside the token, and the panel dials that string.
 single-use, model-scoped token and nothing else. It must never gain a `key=`
 parameter, and the real `GEMINI_API_KEY` must never appear in a response body
 or in anything under `dist/client/`. Both are asserted by
-`src/lib/gemini/live-token.test.ts` and `src/pages/api/endpoints.test.ts`.
+`src/lib/gemini/live-token.test.ts` and `src/tests/api-endpoints.test.ts`.
 
 **Updated in Phase 4:** the old verification here — "`generativelanguage` should
 not appear anywhere under `dist/client/`" — is no longer true, and the check was

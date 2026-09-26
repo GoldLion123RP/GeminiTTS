@@ -56,7 +56,7 @@ const STOP_ICON = `<svg width="18" height="18" viewBox="0 0 24 24" fill="current
 		<p class="font-mono text-xs leading-4 font-medium tracking-normal text-mute uppercase">
 			Speech → text
 		</p>
-		<h2 id="stt-heading" class="text-xl leading-7 font-semibold tracking-normal text-ink latin:tracking-[-0.02em]">
+		<h2 id="stt-heading" class="text-xl leading-7 text-balance font-semibold tracking-normal text-ink latin:tracking-[-0.02em]">
 			Turn speech into clean writing
 		</h2>
 		<p class="text-sm leading-5 text-body">
@@ -267,7 +267,6 @@ const STOP_ICON = `<svg width="18" height="18" viewBox="0 0 24 24" fill="current
 		rawDetails: HTMLDetailsElement;
 		raw: HTMLParagraphElement;
 	} | null = null;
-
 	/** The authoritative transcript. The copy control reads this, not the DOM. */
 	let finalText = '';
 
@@ -332,7 +331,29 @@ const STOP_ICON = `<svg width="18" height="18" viewBox="0 0 24 24" fill="current
 		return view;
 	}
 
-	/** The live draft: finalized text plus the current interim hypothesis. */
+	/**
+	 * PHASE 5.4: tag the transcript with the language it is actually in.
+	 *
+	 * The page is `lang="en"`, so a Bengali or Devanagari transcript was
+	 * announced with English phonetics — a screen reader renders a Bengali
+	 * ল as an English "ell", and a correct transcript comes out sounding like
+	 * gibberish. `auto` is not a language, so it leaves the attribute alone:
+	 * the honest answer there is "we do not know", and claiming English there
+	 * is the same defect one level down.
+	 *
+	 * BCP-47 tags, because that is what `lang` takes — the panel's ids (`en`,
+	 * `bn`, `hi`) are not valid language tags for a document element.
+	 */
+	const LANGUAGE_TAGS: Record<string, string> = { en: 'en', bn: 'bn', hi: 'hi' };
+
+	function applyLanguage(language: string | undefined): void {
+		const tag = language === undefined ? undefined : LANGUAGE_TAGS[language];
+		if (!tag || !view) return;
+		view.text.setAttribute('lang', tag);
+		view.raw.setAttribute('lang', tag);
+	}
+
+	/** Paints the draft: finalized text plus the current interim hypothesis. */
 	function draftText(): string {
 		return [liveFinal.trim(), liveInterim.trim()].filter((part) => part.length > 0).join(' ');
 	}
@@ -855,7 +876,12 @@ registerProcessor('gemini-pcm16', Pcm16);`;
 			stopping = false;
 			setMicState('idle');
 			setStatus('');
+			// AFTER renderFinal, not before: `renderFinal` is what calls
+			// `ensureView`, so the nodes `applyLanguage` writes to do not exist
+			// until it has run. Called first, it would have found a null view
+			// and quietly tagged nothing.
 			renderFinal(result.text, result.raw, result.structured);
+			applyLanguage(result.language);
 
 			// 6.4 — the clipboard write, and only ever an *observed* outcome.
 			await copyToClipboard(finalText);

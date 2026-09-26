@@ -1,3 +1,29 @@
+/**
+ * API route tests. Phase 5.4 — MOVED here from `src/pages/api/`.
+ *
+ * Every file under `src/pages/` is a route. That is not a convention Astro
+ * enforces loosely; it is the routing contract, and `endpoints.test.ts` living
+ * there meant `bun run build` emitted a **production route** at
+ * `/api/endpoints.test` whose component was a test file. Verified in the
+ * artifact: `dist/server/entry.mjs` carried
+ * `"route": "/api/endpoints.test", "component": "src/pages/api/endpoints.test.ts"`.
+ *
+ * So the test suite — `mock.module` stubs, synthetic keys, every assertion — was
+ * part of the shipped server bundle, reachable by anyone who guessed the URL,
+ * and importing `bun:test` at request time.
+ *
+ * It was found by the Phase 5.1 work, and only because of it: `bun run
+ * check:secrets` flagged a key-shaped literal at
+ * `dist/server/chunks/endpoints_*.mjs:364`, which is a line of this file. The
+ * literal was a fake, so the finding was "not a leak" — but the *path* it came
+ * from was the defect, and a gate that had only looked for real secrets would
+ * have reported PASS.
+ *
+ * `src/tests/` sits outside `src/pages/`, so nothing in it can become a route.
+ * The `mock.module` specifiers were rewritten to match; they resolve to the
+ * same modules, and bun keys its mock registry by resolved path, so the stubs
+ * apply exactly as before.
+ */
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 
 /**
@@ -24,7 +50,7 @@ const mintLiveToken = mock(async (language: string) => ({
  * for reasons that pointed nowhere near this mock. A module mock is global
  * state, and a partial one fails somewhere other than where it was written.
  */
-mock.module('../../lib/gemini/live-token', () => ({
+mock.module('../lib/gemini/live-token', () => ({
   LIVE_TRANSCRIBE_MODEL: 'gemini-3.5-transcribe-live',
   LIVE_WEBSOCKET_ORIGIN: 'wss://generativelanguage.googleapis.com',
   mintLiveToken,
@@ -33,14 +59,14 @@ mock.module('../../lib/gemini/live-token', () => ({
 }));
 
 const transcribe = mock(async () => ({ raw: 'raw text', text: 'structured text', structured: true }));
-mock.module('../../lib/gemini/transcribe', () => ({
+mock.module('../lib/gemini/transcribe', () => ({
   MAX_INLINE_AUDIO_BYTES: 20 * 1024 * 1024,
   transcribe,
 }));
 
 // Built through the real header writer so the route is tested against genuine
 // WAV bytes rather than a placeholder blob.
-const { pcmToWav } = await import('../../lib/audio/wav');
+const { pcmToWav } = await import('../lib/audio/wav');
 const WAV = pcmToWav(new Uint8Array(4800));
 
 const synthesize = mock(async () => ({
@@ -50,13 +76,14 @@ const synthesize = mock(async () => ({
   durationSeconds: 0.1,
   sampleRate: 24_000,
 }));
-mock.module('../../lib/gemini/synthesize', () => ({ synthesize }));
+mock.module('../lib/gemini/synthesize', () => ({ synthesize }));
 
-const { POST: liveToken } = await import('./live-token');
-const { POST: transcribeRoute } = await import('./transcribe');
-const { POST: estimate } = await import('./estimate');
-const { POST: synthesizeRoute } = await import('./synthesize');
-const { POST: extractRoute } = await import('./extract');
+const { POST: liveToken } = await import('../pages/api/live-token');
+const { POST: transcribeRoute } = await import('../pages/api/transcribe');
+const { POST: estimate } = await import('../pages/api/estimate');
+const { POST: synthesizeRoute } = await import('../pages/api/synthesize');
+const { POST: extractRoute } = await import('../pages/api/extract');
+const { GET: health } = await import('../pages/api/health');
 
 type Context = Parameters<typeof estimate>[0];
 /** `APIRoute` may return a Response or a Promise of one; every handler here is async. */
@@ -286,7 +313,7 @@ describe('POST /api/synthesize', () => {
   });
 
   test('an upstream failure becomes a plain-language error, not a stack trace', async () => {
-    const { GeminiError } = await import('../../lib/gemini/client');
+    const { GeminiError } = await import('../lib/gemini/client');
     synthesize.mockImplementationOnce(async () => {
       throw new GeminiError('Gemini is unavailable right now.', { status: 503, detail: 'raw' });
     });
@@ -343,6 +370,76 @@ describe('POST /api/extract', () => {
   });
 });
 
+describe('GET /api/health', () => {
+  /**
+   * The route calls the real `probeHealth`, which reads the real `fetch`. It is
+   * replaced for the duration of each test and restored immediately after, so
+   * a test can never leave a stubbed network behind for the next file — bun
+   * shares one module registry across test files, and a leaked `fetch` stub is
+   * the same class of global-state bug the `live-token` mock comment above
+   * describes.
+   */
+  async function withStubbedUpstream(
+    status: number,
+    body: string,
+    run: (response: Response) => Promise<void>,
+  ): Promise<void> {
+    const real = globalThis.fetch;
+    globalThis.fetch = (async () => new Response(body, { status })) as unknown as typeof fetch;
+    try {
+      await run(await health({ request: new Request('http://localhost/api/health') } as Context));
+    } finally {
+      globalThis.fetch = real;
+    }
+  }
+
+  test('reports a rejected key as `invalid`, and 200 all the same', async () => {
+    await withStubbedUpstream(400, '{"error":{"message":"API key not valid."}}', async (response) => {
+      const payload = (await response.json()) as { state: string; detail: string };
+
+      expect(response.status).toBe(200);
+      expect(payload.state).toBe('invalid');
+    });
+  });
+
+  test('distinguishes an exhausted quota from a rejected key', async () => {
+    await withStubbedUpstream(429, 'quota', async (response) => {
+      expect(((await response.json()) as { state: string }).state).toBe('quota_exhausted');
+    });
+  });
+
+  test('reports a working key as `configured`', async () => {
+    await withStubbedUpstream(200, '{"models":[]}', async (response) => {
+      expect(((await response.json()) as { state: string }).state).toBe('configured');
+    });
+  });
+
+  /**
+   * A cached `configured` from before a key was rotated out is worse than no
+   * endpoint at all, and every intermediate is entitled to cache a GET by
+   * default — so `no-store` is asserted rather than assumed.
+   */
+  test('is never cached', async () => {
+    await withStubbedUpstream(200, '{"models":[]}', async (response) => {
+      expect(response.headers.get('cache-control')).toBe('no-store');
+    });
+  });
+
+  test('never echoes the API key', async () => {
+    // Assembled rather than written out. A key-shaped literal in source is
+    // indistinguishable from a real one to any scanner — including this repo's
+    // own `check:secrets` — and a fake that has to be exempted is a fake one
+    // edit away from being a real one. `check-secrets.mjs` uses the same
+    // construction for its positive control.
+    const fake = `AIza${'S'.repeat(30)}`;
+    await withStubbedUpstream(400, `rejected for ${fake}`, async (response) => {
+      const text = await response.text();
+      expect(text).not.toContain('test-key-never-real');
+      expect(text).not.toContain(fake);
+    });
+  });
+});
+
 describe('secret safety', () => {
   test('no endpoint echoes the API key in any response', async () => {
     const responses = await Promise.all([
@@ -352,7 +449,6 @@ describe('secret safety', () => {
       call(synthesizeRoute, { text: 'Hello.', voice: 'Kore' }),
       call(extractRoute, { name: 'notes.txt', data: btoa('Hello.') }),
     ]);
-
     for (const response of responses) {
       expect(await response.text()).not.toContain('test-key-never-real');
     }

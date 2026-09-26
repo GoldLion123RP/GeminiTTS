@@ -20,6 +20,7 @@ import Hero from '../components/Hero.astro';
 import Layout from '../layouts/Layout.astro';
 import SttPanel from '../components/SttPanel.astro';
 import ByokSettings from '../components/ByokSettings.astro';
+import QuotaMeter from '../components/QuotaMeter.astro';
 ---
 
 <Layout
@@ -36,6 +37,7 @@ import ByokSettings from '../components/ByokSettings.astro';
 	{/* `id="main"` is the skip link's target, mounted by SiteHeader. */}
 	<main id="main" class="container-page pb-24">
 		<SttPanel />
+		<QuotaMeter />
 		<ByokSettings />
 	</main>
 </Layout>

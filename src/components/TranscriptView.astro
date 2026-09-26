@@ -44,9 +44,18 @@
 			distinction is carried by colour and by the live-region label, not
 			by swapping in different elements — which would move focus and lose
 			the announcement.
+
+			PHASE 5.4: `lang` starts as `en` and is rewritten from the
+			transcription's own language by SttPanel. The page is `lang="en"`,
+			so a Bengali or Devanagari transcript was being announced with
+			English phonetics — a screen reader reads a Bengali ল as an
+			English "ell", which makes a correct transcript sound like gibberish.
+			The attribute is the entire fix, and it exists for precisely this.
+			`en` rather than absent as the initial value, because a live draft
+			arrives before any language is known.
 		-->
 		<div data-role="surface" aria-live="polite" aria-atomic="true" class="min-h-16">
-			<p data-role="text" class="text-sm leading-5 whitespace-pre-wrap text-mute"></p>
+			<p data-role="text" lang="en" class="text-sm leading-5 whitespace-pre-wrap text-mute"></p>
 		</div>
 
 		<p data-role="status" class="hidden text-xs leading-4 text-mute"></p>
@@ -72,8 +81,12 @@
 			<summary class="cursor-pointer text-sm leading-5 font-medium text-ink">
 				Show raw transcript
 			</summary>
+			<!-- `lang` is kept in step with the transcript above, for the same
+			     reason: a raw disclosure is read just as often, and it is read
+			     in the same language. -->
 			<p
 				data-role="raw"
+				lang="en"
 				class="mt-3 text-sm leading-5 whitespace-pre-wrap text-body"
 			></p>
 		</details>

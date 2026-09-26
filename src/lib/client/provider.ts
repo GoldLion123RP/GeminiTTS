@@ -21,8 +21,10 @@
 
 import { estimateText } from '../audio/estimate';
 import type { LanguageId } from '../gemini/languages';
-import { directSynthesize, directTranscribe } from './gemini-direct';
+import { directSynthesize, directTranscribe, upstreamStatusOf } from './gemini-direct';
 import { readKey, readMode, type ProviderMode } from './keystore';
+import { recordSpend } from './quota';
+import { withRetry } from './retry';
 
 /** Which backend an endpoint resolves to. The whole point of this module. */
 export type Route = 'browser' | 'server' | 'always-server' | 'local';
@@ -81,8 +83,37 @@ export function usingByok(): boolean {
  * the result, rather than by fetching `/api/estimate`. Under the server provider
  * it would be a wasted round-trip, and the plan's §2.4 note that the endpoint
  * is pure local arithmetic is the reason to trust the in-process call.
+ *
+ * PHASE 5.2: every dispatch is wrapped in `withRetry`. The retry set is `429`
+ * and `503` only — the two answers that arrive *before* Gemini does any work,
+ * so a second attempt is free. A 502 (our remap of an upstream 5xx) and a
+ * status-0 network failure are deliberately excluded even though a naive
+ * `status >= 500` would pick them up: both can follow a request Gemini already
+ * charged for, and doubling a user's spend is worse than showing them a "try
+ * again" they can act on. The full reasoning is in `retry.ts`.
  */
-export async function request(endpoint: Endpoint, body: Record<string, unknown>, signal?: AbortSignal): Promise<Response> {
+export async function request(
+  endpoint: Endpoint,
+  body: Record<string, unknown>,
+  signal?: AbortSignal,
+): Promise<Response> {
+  // PHASE 5.3: the seam is the only place that knows a request happened, so
+  // the spend log is written here rather than in each panel. A log recorded at
+  // four call sites is four chances to forget one — and a meter that misses
+  // requests understates the one thing it exists to state.
+  const response = await withRetry(() => dispatch(endpoint, body, signal), {
+    signal,
+    upstreamStatus: upstreamStatusOf,
+  });
+  recordSpend(endpoint, usingByok() ? 'byok' : 'server', response.ok);
+  return response;
+}
+
+async function dispatch(
+  endpoint: Endpoint,
+  body: Record<string, unknown>,
+  signal?: AbortSignal,
+): Promise<Response> {
   if (endpoint === 'estimate') {
     const text = typeof body.text === 'string' ? body.text.trim() : '';
     if (text.length === 0) {

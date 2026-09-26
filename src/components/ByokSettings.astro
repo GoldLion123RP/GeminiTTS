@@ -30,7 +30,7 @@
 		<p class="font-mono text-xs leading-4 font-medium tracking-normal text-mute uppercase">
 			Optional
 		</p>
-		<h2 id="byok-heading" class="text-xl leading-7 font-semibold tracking-normal text-ink latin:tracking-[-0.02em]">
+		<h2 id="byok-heading" class="text-xl leading-7 text-balance font-semibold tracking-normal text-ink latin:tracking-[-0.02em]">
 			Use your own Gemini key
 		</h2>
 		<p class="text-sm leading-5 text-body">
@@ -194,8 +194,15 @@
 		const clear = panel.querySelector<HTMLButtonElement>('#byok-clear');
 		const status = panel.querySelector<HTMLElement>('#byok-status');
 
-		function say(message: string, tone: 'info' | 'error' = 'info') {
-			if (!status) return;
+		/** The Clear control's confirmation arm. See its click handler. */
+		let clearArmed = false;
+
+		function disarmClear(): void {
+			clearArmed = false;
+			if (clear) clear.textContent = 'Clear key';
+		}
+
+		function say(message: string, tone: 'info' | 'error' = 'info') {			if (!status) return;
 			// textContent, never innerHTML: a message can quote upstream
 			// wording, and model or server text must never become markup.
 			status.textContent = message;
@@ -255,6 +262,25 @@
 		});
 
 		clear?.addEventListener('click', () => {
+			// PHASE 5.4: a destructive control asks once.
+			//
+			// Clearing is not undoable — the key is gone from storage, and a
+			// lost AI Studio key has to be regenerated. The guideline is "never
+			// immediate", and a modal for a 20px ghost button would be a
+			// heavier answer than the mistake deserves, so this is a two-step
+			// confirm: the button arms itself, says so, and disarms on blur or
+			// after a few seconds. One extra deliberate click, no dialog.
+			if (!clearArmed) {
+				clearArmed = true;
+				clear.textContent = 'Tap again to confirm';
+				// Reverts on its own, so an arming that is never acted on
+				// cannot leave the button reading "confirm" for the rest of the
+				// session.
+				window.setTimeout(disarmClear, 5_000);
+				return;
+			}
+
+			disarmClear();
 			clearKey();
 			writeMode('server');
 			if (keyInput) keyInput.value = '';
@@ -262,6 +288,8 @@
 			sync();
 			say('Key cleared from this browser.');
 		});
+
+		clear?.addEventListener('blur', disarmClear);
 
 		// If the routing table ever stops excluding Live, the claim in the
 		// markup above would be false. Assert it once, loudly, in dev.

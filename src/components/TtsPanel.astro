@@ -36,7 +36,7 @@ const ACCEPT = '.txt,.md,.pdf,.docx';
 		<p class="font-mono text-xs leading-4 font-medium tracking-normal text-mute uppercase">
 			Text &amp; file → speech
 		</p>
-		<h2 id="tts-heading" class="text-xl leading-7 font-semibold tracking-normal text-ink latin:tracking-[-0.02em]">
+		<h2 id="tts-heading" class="text-xl leading-7 text-balance font-semibold tracking-normal text-ink latin:tracking-[-0.02em]">
 			Turn a document into speech
 		</h2>
 		<p class="text-sm leading-5 text-body">
@@ -89,7 +89,12 @@ const ACCEPT = '.txt,.md,.pdf,.docx';
 
 	<!-- 5.2 — the estimate. The speaking rates behind these figures were
 	     measured against real generations on 2026-09-26, per script; the
-	     `calibrated` field reports whether that is still true. -->
+	     `calibrated` field reports whether that is still true.
+
+	     Phase 5.4: the four figures are `tabular-nums`. They are the one place
+	     in the app where numbers sit side by side for comparison, and
+	     proportional digits make a duration read against a character count
+	     look misaligned even when the values are correct. --&gt;
 	<div
 		id="tts-estimate"
 		class="mt-6 hidden rounded-app border border-hairline bg-hairline-soft p-4"
@@ -98,19 +103,19 @@ const ACCEPT = '.txt,.md,.pdf,.docx';
 		<div class="grid grid-cols-2 gap-4 sm:grid-cols-4">
 			<div class="flex flex-col gap-1">
 				<span class="font-mono text-xs leading-4 tracking-normal text-mute uppercase">Duration</span>
-				<span id="tts-est-seconds" class="text-xl leading-7 font-semibold tracking-normal text-ink">—</span>
+				<span id="tts-est-seconds" class="text-xl leading-7 font-semibold tracking-normal text-ink tabular-nums">—</span>
 			</div>
 			<div class="flex flex-col gap-1">
 				<span class="font-mono text-xs leading-4 tracking-normal text-mute uppercase">Chunks</span>
-				<span id="tts-est-chunks" class="text-xl leading-7 font-semibold tracking-normal text-ink">—</span>
+				<span id="tts-est-chunks" class="text-xl leading-7 font-semibold tracking-normal text-ink tabular-nums">—</span>
 			</div>
 			<div class="flex flex-col gap-1">
 				<span class="font-mono text-xs leading-4 tracking-normal text-mute uppercase">Characters</span>
-				<span id="tts-est-chars" class="text-xl leading-7 font-semibold tracking-normal text-ink">—</span>
+				<span id="tts-est-chars" class="text-xl leading-7 font-semibold tracking-normal text-ink tabular-nums">—</span>
 			</div>
 			<div class="flex flex-col gap-1">
 				<span class="font-mono text-xs leading-4 tracking-normal text-mute uppercase">Est. cost</span>
-				<span id="tts-est-cost" class="text-xl leading-7 font-semibold tracking-normal text-ink">—</span>
+				<span id="tts-est-cost" class="text-xl leading-7 font-semibold tracking-normal text-ink tabular-nums">—</span>
 			</div>
 		</div>
 		<p id="tts-est-note" class="mt-3 text-xs leading-4 text-mute"></p>

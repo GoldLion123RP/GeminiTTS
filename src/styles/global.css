@@ -372,7 +372,25 @@
   }
 }
 
-/* The recording pulse is continuous motion, so it must yield to the user. */
+  /* Phase 5.4 — the sticky header must not eat what the skip link jumps to.
+
+     `<header>` is `sticky top-0` at `h-14` (56px), so activating the skip link
+     scrolled `#main`'s top edge underneath it. Keyboard and screen-reader
+     users land on a heading they cannot see, with no scrollbar movement left
+     to pull back — a failure that is invisible in a screenshot and obvious in
+     use.
+
+     `:target` rather than a class on `#main`: the same trap applies to any
+     future in-page anchor, and one rule covers all of them. The 68px is 56px
+     of header plus 12px of breathing room, and it is tied to the header's
+     `h-14` by this comment rather than by a token — a new token for a scroll
+     offset would be a design-system change, and this is a browser default
+     being adjusted, not a design value. */
+  :target {
+    scroll-margin-top: 68px;
+  }
+
+  /* The recording pulse is continuous motion, so it must yield to the user. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

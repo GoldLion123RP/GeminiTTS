@@ -20,6 +20,26 @@ const { title, description } = Astro.props;
 		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 		<meta name="generator" content={Astro.generator} />
 		<meta name="description" content={description} />
+		{/*
+			Phase 5.4 — `theme-color` for the browser chrome on mobile.
+
+			The usual implementation is two media-query variants:
+
+			    <meta name="theme-color" media="(prefers-color-scheme: dark)" …>
+
+			That is wrong here, because this app has a *tri-state* theme. A user
+			on a dark OS who has explicitly chosen `light` would be given a dark
+			status bar over a light page — the browser chrome would contradict
+			the page it sits above, which is worse than having no theme-color at
+			all. A meta tag cannot express "whatever `data-theme` currently
+			resolves to", so the bootstrap below writes it, in the same pass that
+			already sets `data-theme` before first paint.
+
+			The two values are `{colors.canvas}` for each theme, read here as
+			computed style rather than hardcoded, so a future ramp change cannot
+			leave this tag describing a colour the app no longer uses.
+		*/}
+		<meta name="theme-color" content="#fafafa" />
 		<title>{title}</title>
 		{/*
 			Astro emits an @font-face only for a cssVariable a stylesheet
@@ -79,7 +99,10 @@ const { title, description } = Astro.props;
 				// light or dark the toggle overwrites the stored value and
 				// the OS change is correctly ignored.
 				var onChange = function () {
-					if (stored === 'system') apply();
+					if (stored === 'system') {
+						apply();
+						syncThemeColor();
+					}
 				};
 
 				// The Safari < 14 fallback (`addListener`) is deprecated on
@@ -90,6 +113,22 @@ const { title, description } = Astro.props;
 				// `is:inline` above), so a type assertion is not available
 				// either.
 				var legacyAddListener = Reflect.get(query, 'addListener');
+
+				// Phase 5.4: keep the browser chrome in step with `data-theme`.
+				// Resolved from the computed canvas colour rather than a literal
+				// so this cannot drift from the palette in global.css.
+				var themeColor = document.querySelector('meta[name="theme-color"]');
+				function syncThemeColor() {
+					if (!themeColor) return;
+					try {
+						themeColor.setAttribute(
+							'content',
+							window.getComputedStyle(document.body).backgroundColor || '#fafafa',
+						);
+					} catch (e) {
+						/* getComputedStyle unavailable — keep the initial value */
+					}
+				}
 
 				if (typeof query.addEventListener === 'function') {
 					query.addEventListener('change', onChange);
@@ -112,8 +151,9 @@ const { title, description } = Astro.props;
 						} catch (e) {
 							/* preference still applies for this page view */
 						}
-						apply();
-					},
+					apply();
+					syncThemeColor();
+				},
 				};
 			})();
 		</script>

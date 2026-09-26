@@ -12,6 +12,7 @@
     "check": "astro check",
     "check:contrast": "node scripts/check-contrast.mjs",
     "check:secrets": "node scripts/check-secrets.mjs",
+    "check:routes": "node scripts/check-routes.mjs",
     "docs:sync": "node scripts/sync-docs.mjs",
     "astro": "astro",
     "start": "node --env-file-if-exists=.env dist/server/entry.mjs",

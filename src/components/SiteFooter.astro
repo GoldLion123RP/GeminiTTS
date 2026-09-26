@@ -49,7 +49,12 @@ const items = visibleNavItems();
 			}
 		</nav>
 
-		<p class="font-mono text-xs leading-4 text-mute">
+		{/* `translate="no"` (Phase 5.4): these are API model identifiers, not
+		    prose. Chrome's and Firefox's translators both mangle hyphenated
+		    identifiers of this shape — "gemini-3.5-transcribe" is not a
+		    sentence, and translating it yields a string that matches no model
+		    name at all. */}
+		<p class="font-mono text-xs leading-4 text-mute" translate="no">
 			gemini-3.5-transcribe · gemini-3.8-flash-lite-tts
 		</p>
 	</div>

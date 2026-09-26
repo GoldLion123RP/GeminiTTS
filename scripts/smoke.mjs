@@ -130,6 +130,66 @@ try {
 		);
 		if (!landingIsClean) exitCode = 1;
 
+		// PHASE 5.4: the shared chrome, checked on a route that owns a tool.
+		//
+		// These are the assertions a screenshot would show as "looks fine" and
+		// a regression would make invisible. A dropped skip link or a stripped
+		// `theme-color` leaves the page looking correct; it is only the
+		// keyboard user, the mobile status bar, or the balance of a headline
+		// that notices.
+		const tts = await fetch(`http://${HOST}:${PORT}/text-to-speech`);
+		const ttsHtml = await tts.text();
+		const chrome = [
+			{ label: 'skip link', ok: ttsHtml.includes('Skip to content') && ttsHtml.includes('href="#main"') },
+			{ label: 'theme-color', ok: ttsHtml.includes('name="theme-color"') },
+			{ label: 'quota meter', ok: ttsHtml.includes('id="quota"') },
+			{ label: 'aria-current nav', ok: ttsHtml.includes('aria-current="page"') },
+		];
+		for (const item of chrome) {
+			console.log(`${item.ok ? '✓' : '✗'} chrome       ${item.label} ${item.ok ? 'present' : 'MISSING'}`);
+			if (!item.ok) exitCode = 1;
+		}
+
+		// Reduced motion lives in the stylesheet, not the HTML — the first
+		// version of this check looked in the page and correctly reported it
+		// missing, which is a reminder that an assertion against the wrong
+		// artifact reports a false failure just as confidently as a false
+		// pass. The stylesheet is resolved from the page's own <link>, so this
+		// reads the CSS the browser would.
+		const cssHref = /<link[^>]+rel="stylesheet"[^>]+href="([^"]+)"/.exec(ttsHtml)?.[1];
+		let reducedMotion = false;
+		if (cssHref) {
+			const css = await (await fetch(new URL(cssHref, `http://${HOST}:${PORT}`))).text();
+			reducedMotion = css.includes('prefers-reduced-motion');
+		}
+		console.log(
+			`${reducedMotion ? '✓' : '✗'} chrome       reduced motion ${reducedMotion ? 'present in CSS' : 'MISSING (stylesheet unreadable or rule absent)'}`,
+		);
+		if (!reducedMotion) exitCode = 1;
+
+		// A test file under src/pages/ used to ship as a live route. It is
+		// gone (see `scripts/check-routes.mjs`), and this is the end-to-end
+		// half of that check: the URL must not resolve to a page.
+		const testRoute = await fetch(`http://${HOST}:${PORT}/api/endpoints.test`);
+		const testGone = testRoute.status === 404;
+		console.log(
+			`${testGone ? '✓' : '✗'} route leak   /api/endpoints.test → ${testGone ? '404' : `REACHABLE (${testRoute.status})`}`,
+		);
+		if (!testGone) exitCode = 1;
+
+		// PHASE 5.1: the endpoint that answers the question this script exists
+		// to ask, asked directly instead of inferred from an error string.
+		//
+		// The live-token check below still has to run, but the diagnosis no
+		// longer depends on pattern-matching a message. Previously "no .env"
+		// and "bad key" were separated by looking for the words
+		// "GEMINI_API_KEY is not set" in a 500 body — a rule that breaks the
+		// moment someone improves the wording of that message.
+		const health = await fetch(`http://${HOST}:${PORT}/api/health`);
+		const report = await body(health);
+		const state = report?.state ?? '(no state)';
+		console.log(`✓ health         ${health.status} — ${state}${report?.detail ? `: ${report.detail}` : ''}`);
+
 		// The endpoint that reads the key. This is the check that would have
 		// caught the Phase 6 confusion in one command.
 		const token = await fetch(`http://${HOST}:${PORT}/api/live-token`, {
@@ -150,9 +210,8 @@ try {
 			if (!shapeOk) exitCode = 1;
 		} else {
 			const message = payload?.error ?? '(no message)';
-			const isMissingKey = /GEMINI_API_KEY is not set/.test(message);
 			console.log(`✗ live-token    ${token.status} — ${message}`);
-			if (isMissingKey) {
+			if (state === 'missing') {
 				// The key is genuinely absent from process.env. Two very
 				// different causes, so both are named rather than guessing.
 				console.error('');
@@ -162,6 +221,16 @@ try {
 				console.error('');
 				console.error('  Fix: use `bun run dev` (loads .env), or `bun run start`');
 				console.error('  (adds --env-file-if-exists=.env).');
+			} else if (state === 'invalid') {
+				// The key IS present and Gemini rejected it. This is the case
+				// the old string-matching heuristic misfiled as a missing key.
+				console.error('');
+				console.error('  GEMINI_API_KEY is set but Gemini rejected it. The .env file is');
+				console.error('  being read correctly; the credential itself is the problem.');
+			} else if (state === 'quota_exhausted') {
+				console.error('');
+				console.error('  The key works, but the project is out of quota. Free-tier limits');
+				console.error('  reset at midnight Pacific; a paid key removes the ceiling.');
 			}
 			exitCode = 1;
 		}

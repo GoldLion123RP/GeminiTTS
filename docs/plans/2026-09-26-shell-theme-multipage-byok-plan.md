@@ -257,11 +257,11 @@ Each sub-phase lists goal, affected files, details, dependencies. `[NEW]` / `[MO
   - [x] 4.4 Settings UI with a *true* security statement
   - [x] 4.5 Panels migrated; server path still the default
   - [x] 4.6 Secret grep **with positive control** — `bun run check:secrets`
-- [ ] **Phase 5 — Resilience**
-  - [ ] 5.1 `/api/health` four-state, redacted
-  - [ ] 5.2 Backoff + jitter, transient errors only
-  - [ ] 5.3 Quota meter, honestly labelled
-  - [ ] 5.4 Accessibility pass
+- [x] **Phase 5 — Resilience — COMPLETE 2026-09-26**
+  - [x] 5.1 `/api/health` — `configured` | `missing` | `invalid` | `quota_exhausted` (+ `unknown`), redacted, `cache-control: no-store`, probed with `models?pageSize=1` so it costs no quota
+  - [x] 5.2 Backoff + full jitter at the provider seam; `429`/`503` only, never `502` — see the verdict for why
+  - [x] 5.3 Quota meter, honestly labelled; Pacific-day buckets; per-provider counts
+  - [x] 5.4 Accessibility pass via the `web-design-guidelines` skill — eight findings fixed, plus a shipped-route defect it uncovered
 - [ ] **Phase 6 — Verification**
   - [ ] 6.1 `build` + `check` + `test` output pasted
   - [ ] 6.2 Theme × route matrix, no flash
