@@ -19,7 +19,7 @@ more than a line, it belongs in `docs/` and gets linked from there.
 
 ## Rules
 
-Both are registered in `opencode.jsonc` and load automatically.
+All are registered in `opencode.jsonc` and load automatically.
 
 - **`analysis_and_research.md`** — three-pass research pipeline: Sweep (minimum
   three live touchpoints), Validate (first-principles teardown plus a
@@ -32,6 +32,13 @@ Both are registered in `opencode.jsonc` and load automatically.
   goal / affected files / details / dependencies, an auto-updating checklist,
   and a verification matrix. Drafting a plan is review-only; execution needs
   explicit authorization.
+- **`plan-execution-protocol.md`** — what happens *after* a plan is approved:
+  mandatory ingestion (plan, companion report, evidence directory, regression
+  suites), strict phase isolation with no drive-by refactoring, an acceptance
+  gate that must be green before a phase closes, `[x]` checkoff and phase status
+  update, then session compaction between phases. It references `npm run build`;
+  in this repo that is `bun run build`, and `bun run check` is the typecheck
+  gate.
 
 ## Skills
 

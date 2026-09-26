@@ -48,7 +48,7 @@ Execution proceeds strictly in ascending hierarchical order (**Phase 0 → Phase
 ### Step 3: Verification & Acceptance Gate
 Once changes for the active phase are written, the agent must immediately test and verify:
 1. **Run the Narrowest Real Check**: Execute the exact verification script, test suite, or CLI assertion designated for that phase (e.g., `node docs/<Topic>/data/engine-simulation.mjs`, `node scripts/verify-hourly-salary-2026.mjs`).
-2. **Run Build Verification**: Run `npm run build` (or project equivalent) to ensure zero Astro/Vite/TypeScript compilation or bundle errors.
+2. **Run Build Verification**: Run `npm run build` (or project equivalent) to ensure zero Astro/Vite/TypeScript compilation or bundle errors. In this repo, `npm` means `bun`: use `bun run build` and `bun run check`.
 3. **Check Live Acceptance Criteria**: Validate against every acceptance item explicitly written in that phase's spec.
 4. **Hard Invariant**: **No phase may complete with a red harness or failing build.** If verification fails, diagnose and remediate within the phase scope before moving on.
 
@@ -87,7 +87,7 @@ To maintain context hygiene, prevent token bloat, and avoid model hallucination 
 | **0. Ingest** | Ingest plan, audit report, data/ files, and test harnesses | Full understanding of scope, math, and "do not fix" list |
 | **1. Isolate** | Lock in current hierarchical phase (e.g., Phase 0) | Zero work done on subsequent or guarded phases |
 | **2. Code** | Make surgical edits matching existing style and types | Strict TypeScript, zero lint errors, no unnecessary diffs |
-| **3. Verify** | Execute test harness + `npm run build` | Exits 0, all acceptance assertions pass |
+| **3. Verify** | Execute test harness + `npm run build` (`bun run build` here) | Exits 0, all acceptance assertions pass |
 | **4. Sync Docs**| Mark `- [x]` in `implementation-plan.md` & update phase status | Documentation matches code reality 1:1 |
 | **5. Compact**| Run `/compact` to reset context overhead | Clean session context ready for next phase |
 

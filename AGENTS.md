@@ -54,6 +54,10 @@ the API key must stay server-side. Commands, project structure, and the
   agent workflow. Remove a known-gap note when the gap is fixed. Verify every
   claim against the repo first. Policy:
   [`docs/agent-workflow.md`](docs/agent-workflow.md#documentation-rules).
+- **Plan execution.** Executing an approved implementation plan follows
+  `.agents/rules/plan-execution-protocol.md`: ingest plan + companion report
+  first, work one phase in isolation, verify before advancing, check off the
+  plan's `[x]` boxes, then compact. `npm` in that protocol means `bun` here.
 - **English only** in comments, docs, and commit messages.
 
 ## Skills
