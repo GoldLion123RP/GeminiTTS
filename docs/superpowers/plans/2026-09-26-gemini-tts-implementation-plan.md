@@ -52,7 +52,7 @@ Carried verbatim from the approved spec (`SC1`–`SC12`). The verification matri
 
 ### 1.5 Deliverables
 
-A working page, four server endpoints, ~14 pure library modules, `bun test` unit tests for the pure modules, and a green `bun run build` + `npx astro check`.
+A working page, four server endpoints, ~14 pure library modules, `bun test` unit tests for the pure modules, and a green `bun run build` + `bun run check`.
 
 ---
 
@@ -626,7 +626,7 @@ Run the full §5 matrix. Then load the **`web-design-guidelines`** skill and aud
 - [ ] **Phase 7 — Verification & docs**
   - [ ] 7.1 `bun test` green
   - [ ] 7.2 `bun run build` zero errors
-  - [ ] 7.3 `npx astro check` zero errors
+  - [ ] 7.3 `bun run check` zero errors
   - [ ] 7.4 Grep `dist/` for the key — zero matches
   - [ ] 7.5 **Calibrate `CHARS_PER_SECOND` against a real generation**
   - [ ] 7.6 Responsive + keyboard + reduced-motion pass
@@ -671,7 +671,7 @@ Before editing, re-read rather than assume: `astro.config.mjs` (0.3 may have bee
 ```powershell
 bun test
 bun run build          # must complete with zero errors
-npx astro check        # must report zero type errors
+bun run check          # must report zero type errors (`astro check`)
 ```
 
 ### 5.5 Secret-safety gate (blocking)
