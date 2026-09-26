@@ -30,6 +30,19 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # JOB-LEVEL, and this is load-bearing.
+    #
+    # `PAGES_TARGET` used to be set on the build step alone. That published a
+    # site with no HTML in it: the pages were prerendered, then `check:panel`
+    # ran two of its own `bun run build` invocations for the positive control,
+    # inherited an environment with no `PAGES_TARGET` in it, and silently
+    # replaced the artifact with a NODE build — whose `dist/client` holds the
+    # hashed assets and none of the prerendered pages. The upload step then
+    # shipped 14 files and zero `.html`, and the run still reported success.
+    # Every step in this job must build the same target, so the variable is set
+    # where all of them can see it.
+    env:
+      PAGES_TARGET: pages
     steps:
       - uses: actions/checkout@v4
 
@@ -44,8 +57,6 @@ jobs:
       # depend on a secret it does not use. `src/env.d.ts` types the variable
       # optional for exactly this reason.
       - name: Build the static site
-        env:
-          PAGES_TARGET: pages
         run: bun run build
 
       - name: Type check
@@ -56,6 +67,21 @@ jobs:
       # disabled Generate button, so it runs in CI rather than by hand.
       - name: Cost gate
         run: bun run check:panel
+
+      # The net under the whole job. `check:panel` rebuilds the project, so any
+      # step that ends up building the wrong target replaces the artifact this
+      # upload depends on — and a static deploy of a node build is not a build
+      # failure, it is a successful upload of a site with no pages in it. That
+      # is exactly what happened, and it shipped as a green run.
+      - name: Assert the static output survived
+        run: |
+          for page in dist/client/index.html dist/client/text-to-speech/index.html dist/client/speech-to-text/index.html; do
+            if [ ! -f "$page" ]; then
+              echo "::error::$page is missing. Something rebuilt the node target over the static one."
+              exit 1
+            fi
+          done
+          echo "all three pages are present in dist/client"
 
       - uses: actions/configure-pages@v5
 

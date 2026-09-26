@@ -251,6 +251,31 @@ FAIL  Generate is disabled when the textarea already has text on load. The panel
 It runs in `.github/workflows/pages.yml`, because a browser-only regression that
 ships once should not be able to ship twice on a machine nobody is watching.
 
+### A green Pages run that published no pages
+
+`check:panel` rebuilds the project twice (once for the control, once to restore),
+and it inherits whatever `PAGES_TARGET` its shell can see. The workflow originally
+set `PAGES_TARGET` on the build step alone, so those two rebuilds ran as **node**
+builds and replaced the artifact: `dist/client` kept the hashed assets and lost
+every prerendered page. The upload shipped 14 files and zero `.html`, and the run
+reported `success` — a static deploy of a node build is not a build failure.
+
+It was caught by downloading the deployment artifact and listing it, which is
+the only step in that pipeline that looks at what was actually published:
+
+```
+$ gh run download <run> --name github-pages && tar -tf artifact.tar | grep -c '\.html$'
+0
+```
+
+Two changes, because either alone leaves the trap in place. `PAGES_TARGET` moved
+to the **job-level** `env`, so every step in the job builds the same target; and
+an assertion step checks the three `index.html` files still exist immediately
+before the upload. Lesson worth keeping: a check that rebuilds the artifact is
+itself a writer of the artifact, and a deployment pipeline needs a step that
+verifies the *published* thing rather than the steps that were meant to produce
+it.
+
 ### `bun run verify:stt`
 
 ```
