@@ -123,6 +123,13 @@ const STOP_ICON = `<svg width="18" height="18" viewBox="0 0 24 24" fill="current
 <script>
 	// Phase 6 behaviour. Plain DOM, no framework, no state library.
 	//
+	// Phase 4.5: both calls go through the provider seam. `live-token` is
+	// pinned to the server by the routing table and cannot follow the user's
+	// key — Phase 0.2 measured that the Live WebSocket authenticates only via a
+	// query parameter, which would put the key in browser history. `transcribe`
+	// does follow it. The panel branches on `response.ok` either way.
+	import { request } from '../lib/client/provider';
+	//
 	// NOTE ON SCOPE: the constants below are duplicated from the frontmatter
 	// because an Astro <script> is a separate module — it cannot read
 	// frontmatter variables. The frontmatter copies are used to render the
@@ -537,11 +544,7 @@ const STOP_ICON = `<svg width="18" height="18" viewBox="0 0 24 24" fill="current
 		}
 
 		try {
-			const response = await fetch('/api/live-token', {
-				method: 'POST',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ language: languageSelect.value }),
-			});
+			const response = await request('live-token', { language: languageSelect.value });
 			if (!response.ok) {
 				const payload = (await response.json().catch(() => null)) as { error?: string } | null;
 				setNotice(
@@ -832,15 +835,11 @@ registerProcessor('gemini-pcm16', Pcm16);`;
 
 		try {
 			const base64 = await blobToBase64(blob);
-			const response = await fetch('/api/transcribe', {
-				method: 'POST',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({
-					audio: base64,
-					mimeType: blob.type || recordedMime || 'audio/webm',
-					language: languageSelect.value,
-					structure: structureToggle.checked,
-				}),
+			const response = await request('transcribe', {
+				audio: base64,
+				mimeType: blob.type || recordedMime || 'audio/webm',
+				language: languageSelect.value,
+				structure: structureToggle.checked,
 			});
 
 			if (!response.ok) {

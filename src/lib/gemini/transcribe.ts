@@ -1,10 +1,10 @@
 import { AudioTranscriptionConfigMode, type Part } from '@google/genai';
 import { asGeminiError, GeminiError, gemini } from './client';
 import { languageCodes, type LanguageId } from './languages';
+import { STRUCTURE_MODEL, TRANSCRIBE_MODEL } from './models';
 import { STRUCTURE_SYSTEM_INSTRUCTION, structurePrompt } from '../prompts/structure';
 
-export const TRANSCRIBE_MODEL = 'gemini-3.5-transcribe';
-export const STRUCTURE_MODEL = 'gemini-3.8-flash';
+export { STRUCTURE_MODEL, TRANSCRIBE_MODEL };
 
 /** Documented inline ceiling for a `generateContent` request, audio included. */
 export const MAX_INLINE_AUDIO_BYTES = 20 * 1024 * 1024;

@@ -1,0 +1,274 @@
+---
+// Phase 4.4 — the BYOK settings surface.
+//
+// DESIGN.md shapes only: `feature-card` (flat hairline card), `text-input`
+// (rounded.sm 6px, hairline, body-md), `button-primary` / `button-secondary`
+// (marketing pills), and the `rounded-app` checkbox row copied from
+// `SttPanel`. No invented colours, radii, or spacing.
+//
+// THE SECURITY STATEMENT BELOW MUST STAY TRUE. It is a claim about what this
+// app does with a credential, and every clause in it is enforced by a test in
+// `src/lib/client/provider.test.ts`:
+//
+//   - stored only in this browser (sessionStorage by default, localStorage only
+//     if the user ticks "remember"),
+//   - sent ONLY to generativelanguage.googleapis.com,
+//   - never sent to this app's own server, and never written to a URL.
+//
+// That last clause is the reason Live transcription is excluded from BYOK: the
+// Live WebSocket can only authenticate via a query parameter (Phase 0.2), so
+// routing it through the browser would put the key in history. The exclusion
+// is stated in the UI rather than discovered as a broken feature later.
+---
+
+<section
+	id="byok"
+	class="rounded-card border border-hairline bg-elevated p-6 shadow-whisper"
+	aria-labelledby="byok-heading"
+>
+	<div class="flex flex-col gap-2">
+		<p class="font-mono text-xs leading-4 font-medium tracking-normal text-mute uppercase">
+			Optional
+		</p>
+		<h2 id="byok-heading" class="text-xl leading-7 font-semibold tracking-normal text-ink latin:tracking-[-0.02em]">
+			Use your own Gemini key
+		</h2>
+		<p class="text-sm leading-5 text-body">
+			Keep the default and requests go through this app's server on the free tier. Add a key
+			and your browser talks to Google directly, so the key never reaches this app at all.
+		</p>
+	</div>
+
+	<!-- The provider choice is a radio group, not a toggle. A binary control
+	     cannot honestly represent "off / on / on but misconfigured", and the
+	     third state is exactly the one that matters here. -->
+	<fieldset class="mt-6 border-0 p-0">
+		<legend class="font-mono text-xs leading-4 font-medium tracking-normal text-mute uppercase">
+			Where requests are sent
+		</legend>
+
+		<div class="mt-2 flex flex-col gap-2">
+			<label
+				for="byok-provider-server"
+				class="flex cursor-pointer items-center gap-3 rounded-app border border-hairline bg-elevated px-3 py-2 text-sm leading-5 text-ink"
+			>
+				<input
+					id="byok-provider-server"
+					name="byok-provider"
+					type="radio"
+					value="server"
+					checked
+					class="size-4 shrink-0 cursor-pointer accent-ink"
+				/>
+				<span>This app's server (default)</span>
+			</label>
+
+			<label
+				for="byok-provider-byok"
+				class="flex cursor-pointer items-center gap-3 rounded-app border border-hairline bg-elevated px-3 py-2 text-sm leading-5 text-ink"
+			>
+				<input
+					id="byok-provider-byok"
+					name="byok-provider"
+					type="radio"
+					value="byok"
+					class="size-4 shrink-0 cursor-pointer accent-ink"
+				/>
+				<span>My own key, sent from this browser</span>
+			</label>
+		</div>
+	</fieldset>
+
+	<!-- The key form. Hidden rather than disabled while the server provider is
+	     selected: a disabled control is skipped by keyboard traversal and would
+	     make the whole form unreachable for a screen-reader user until they
+	     first chose the other option. `hidden` keeps it out of the tree. -->
+	<div id="byok-key-fields" class="mt-6 hidden flex-col gap-3">
+		<div class="flex flex-col gap-2">
+			<label
+				class="font-mono text-xs leading-4 font-medium tracking-normal text-mute uppercase"
+				for="byok-key"
+			>
+				Gemini API key
+			</label>
+			<!-- `type="password"` so the key is not shoulder-readable, and
+			     `autocomplete="off"` so a password manager does not offer to
+			     store a credential the app never sees. -->
+			<input
+				id="byok-key"
+				name="byok-key"
+				type="password"
+				autocomplete="off"
+				spellcheck="false"
+				placeholder="AIza…"
+				class="w-full rounded-app border border-hairline bg-elevated px-3 py-2 text-sm leading-5 text-ink"
+			/>
+			<p class="text-xs leading-4 text-mute">
+				From <a href="https://aistudio.google.com/apikey" class="text-link underline">AI Studio</a>.
+				Create an <em>auth key</em>, which is restricted to the Gemini API by default.
+			</p>
+		</div>
+
+		<label
+			for="byok-remember"
+			class="flex cursor-pointer items-center gap-2 rounded-app border border-hairline bg-elevated px-3 py-2 text-sm leading-5 text-ink"
+		>
+			<input
+				id="byok-remember"
+				type="checkbox"
+				class="size-4 shrink-0 cursor-pointer accent-ink"
+			/>
+			<span>Remember on this device</span>
+		</label>
+
+		<div class="flex flex-wrap items-center gap-2">
+			<button
+				id="byok-save"
+				type="button"
+				class="rounded-pill bg-ink px-3.5 py-2 text-sm leading-5 font-medium text-canvas transition-opacity hover:opacity-90"
+			>
+				Save and test
+			</button>
+			<button
+				id="byok-clear"
+				type="button"
+				class="rounded-pill border border-hairline bg-elevated px-3.5 py-2 text-sm leading-5 font-medium text-ink transition-opacity hover:opacity-90"
+			>
+				Clear key
+			</button>
+		</div>
+
+		<p
+			id="byok-status"
+			role="status"
+			aria-live="polite"
+			class="hidden rounded-app border border-hairline bg-hairline-soft p-3 text-xs leading-4 text-body"
+		>
+		</p>
+	</div>
+
+	<!-- The honest scope statement. Written as a list of what leaves the device
+	     because a single reassuring sentence is exactly where a privacy claim
+	     goes to be wrong. -->
+	<div class="mt-6 rounded-app border border-hairline bg-hairline-soft p-3 text-xs leading-4 text-body">
+		<p class="font-medium text-ink">What happens to your key</p>
+		<ul class="mt-2 flex list-disc flex-col gap-1 pl-4">
+			<li>Stored only in this browser. This device only — it is never synced anywhere.</li>
+			<li>
+				Kept for this tab by default. Tick “remember” to keep it between visits; unticking
+				removes the saved copy.
+			</li>
+			<li>Sent only to Google, as an <code class="font-mono">x-goog-api-key</code> header.</li>
+			<li>Never sent to this app's server, and never written into a web address.</li>
+			<li>
+				<strong class="font-semibold text-ink">Live transcription still uses the server.</strong>
+				Its connection can only carry a key inside the web address, which browsers record in
+				history, so it is never given your key.
+			</li>
+		</ul>
+		<p class="mt-2">
+			Requests you make count against your own Google project's quota, not this app's. PDF and
+			Word text extraction also runs on the server and never sees your key.
+		</p>
+	</div>
+</section>
+
+<script>
+	// Phase 4.4 behaviour. Vanilla DOM, matching every other panel in the app.
+	//
+	// `byokCovers('live-token')` is read from the routing table rather than
+	// hardcoded, so if the routing ever changes this panel's claim changes with
+	// it. A security statement that can drift from the code is worse than no
+	// statement at all.
+	import { byokCovers } from '../lib/client/provider';
+	import { clearKey, looksLikeGeminiKey, readKey, readMode, writeKey, writeMode } from '../lib/client/keystore';
+
+	const panel = document.getElementById('byok');
+	if (panel) {
+		const fields = panel.querySelector<HTMLElement>('#byok-key-fields');
+		const keyInput = panel.querySelector<HTMLInputElement>('#byok-key');
+		const remember = panel.querySelector<HTMLInputElement>('#byok-remember');
+		const serverRadio = panel.querySelector<HTMLInputElement>('#byok-provider-server');
+		const byokRadio = panel.querySelector<HTMLInputElement>('#byok-provider-byok');
+		const save = panel.querySelector<HTMLButtonElement>('#byok-save');
+		const clear = panel.querySelector<HTMLButtonElement>('#byok-clear');
+		const status = panel.querySelector<HTMLElement>('#byok-status');
+
+		function say(message: string, tone: 'info' | 'error' = 'info') {
+			if (!status) return;
+			// textContent, never innerHTML: a message can quote upstream
+			// wording, and model or server text must never become markup.
+			status.textContent = message;
+			status.classList.remove('hidden');
+			// `error` and `body` are real tokens; `accent` is not defined in
+			// `global.css` and would have compiled to an unstyled colour,
+			// turning a key error into ordinary body text with no visible
+			// difference at all.
+			status.classList.toggle('text-ink', tone === 'info');
+			status.classList.toggle('text-error', tone === 'error');
+		}
+
+		/** The password input is never pre-filled with the stored key. */
+		function sync() {
+			const mode = readMode();
+			if (serverRadio) serverRadio.checked = mode === 'server';
+			if (byokRadio) byokRadio.checked = mode === 'byok';
+			if (fields) fields.classList.toggle('hidden', mode !== 'byok');
+			if (status && readKey() !== null) {
+				status.classList.remove('hidden');
+				status.textContent = 'A key is stored on this device.';
+			}
+		}
+
+		for (const radio of [serverRadio, byokRadio]) {
+			radio?.addEventListener('change', () => {
+				if (!radio.checked) return;
+				const mode = radio.value === 'byok' ? 'byok' : 'server';
+				writeMode(mode);
+				sync();
+				// Reverting clears the key in storage, so saying so is a fact
+				// rather than a courtesy.
+				if (mode === 'server') say('Using the server key. Any stored key was removed.');
+			});
+		}
+
+		remember?.addEventListener('change', () => {
+			const key = keyInput?.value ?? readKey() ?? '';
+			if (key.length > 0) writeKey(key, remember.checked);
+		});
+
+		save?.addEventListener('click', () => {
+			const value = keyInput?.value.trim() ?? '';
+			if (value.length === 0) {
+				say('Paste a key first.', 'error');
+				return;
+			}
+			if (!looksLikeGeminiKey(value)) {
+				say('That does not look like a Gemini key. It should start with AIza.', 'error');
+				return;
+			}
+			writeKey(value, remember?.checked ?? false);
+			writeMode('byok');
+			sync();
+			if (keyInput) keyInput.value = '';
+			say('Key saved. Test it by generating or transcribing something.');
+		});
+
+		clear?.addEventListener('click', () => {
+			clearKey();
+			writeMode('server');
+			if (keyInput) keyInput.value = '';
+			if (status) status.classList.add('hidden');
+			sync();
+			say('Key cleared from this browser.');
+		});
+
+		// If the routing table ever stops excluding Live, the claim in the
+		// markup above would be false. Assert it once, loudly, in dev.
+		if (import.meta.env.DEV && byokCovers('live-token')) {
+			console.warn('[byok] live-token is routable to the browser; the security copy needs review.');
+		}
+
+		sync();
+	}
+</script>

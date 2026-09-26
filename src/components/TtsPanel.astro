@@ -191,6 +191,13 @@ const ACCEPT = '.txt,.md,.pdf,.docx';
 	// estimate and the generate step both read it directly, so a value shown
 	// in the estimate can never be a stale copy of text the user has since
 	// replaced.
+	//
+	// Phase 4.5: the three calls below no longer name an endpoint. They go
+	// through the provider seam, which decides between our server and the
+	// browser based on whether the user has supplied their own key. The panel
+	// deliberately does not know which one answered — it branches on
+	// `response.ok` exactly as it did before.
+	import { request } from '../lib/client/provider';
 
 	interface Estimate {
 		characters: number;
@@ -347,12 +354,7 @@ const ACCEPT = '.txt,.md,.pdf,.docx';
 		activeController = controller;
 
 		try {
-			const response = await fetch('/api/estimate', {
-				method: 'POST',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ text }),
-				signal: controller.signal,
-			});
+			const response = await request('estimate', { text }, controller.signal);
 			if (controller.signal.aborted) return;
 
 			if (!response.ok) {
@@ -447,11 +449,7 @@ const ACCEPT = '.txt,.md,.pdf,.docx';
 		try {
 			progressLabel.textContent = `Extracting text from ${file.name}…`;
 			const data = await fileToBase64(file);
-			const response = await fetch('/api/extract', {
-				method: 'POST',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ name: file.name, data }),
-			});
+			const response = await request('extract', { name: file.name, data });
 			const payload = (await response.json().catch(() => null)) as Record<string, unknown> | null;
 
 			if (!response.ok) {
@@ -552,16 +550,11 @@ const ACCEPT = '.txt,.md,.pdf,.docx';
 		activeController = controller;
 
 		try {
-			const response = await fetch('/api/synthesize', {
-				method: 'POST',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({
-					text,
-					voice: voiceSelect.value,
-					language: languageSelect.value,
-				}),
-				signal: controller.signal,
-			});
+			const response = await request('synthesize', {
+				text,
+				voice: voiceSelect.value,
+				language: languageSelect.value,
+			}, controller.signal);
 
 			if (!response.ok) {
 				const payload = await response.json().catch(() => null);

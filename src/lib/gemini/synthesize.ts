@@ -2,9 +2,10 @@ import { chunkText } from '../audio/chunk';
 import { pcmToWav, SAMPLE_RATE, wavDurationSeconds } from '../audio/wav';
 import { asGeminiError, GeminiError, gemini } from './client';
 import type { LanguageId } from './languages';
+import { TTS_MODEL } from './models';
 import { resolveVoiceName } from './voices';
 
-export const TTS_MODEL = 'gemini-3.8-flash-lite-tts';
+export { TTS_MODEL };
 
 /** Reinforces the professional register in the output, not just via the voice choice. */
 export const STYLE_INSTRUCTION =
