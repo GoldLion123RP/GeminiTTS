@@ -32,7 +32,7 @@ Before editing any code or executing any commands, the agent **MUST** ingest the
    - Mathematical formulas, tax tables, regulatory citations (IRS, OPM, BLS, CA DIR, DFAS).
    - **Critical Confirmations & "Do Not Fix" List** (prevent false-positive regressions).
 3. **Inspect the Evidence & Data Directory**: Review all datasets, mock tables, or test simulation scripts in `docs/<Topic>/data/` (e.g., `engine-simulation.mjs`, raw JSON/CSVs).
-4. **Inspect Existing Regression Suites**: Check project verification scripts (e.g., `scripts/verify-*.mjs`, test runners) and baseline build status (`npm run build`).
+4. **Inspect Existing Regression Suites**: Check project verification scripts (e.g., `scripts/verify-*.mjs`, test runners) and baseline build status (`bun run build` here).
 5. **Declare Initial Target**: State explicitly in chat that ingestion is complete and declare the initial target phase (e.g., *"Ingestion complete. Beginning Phase 0: Ship-blocking defects."*).
 
 ---
