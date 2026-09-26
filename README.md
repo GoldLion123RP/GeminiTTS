@@ -21,9 +21,11 @@ An Astro + Tailwind CSS v4 front end for GeminiTTS, built on the Geist design sy
 > **Text → Speech is verified against the real API.** Seven generations were
 > produced and used to calibrate the cost estimator.
 >
-> **There is no public demo URL.** The app needs a Node server, so it cannot
-> run on GitHub Pages — see
-> [GitHub Pages is not a compatible host](#github-pages-is-not-a-compatible-host).
+> **There is a static demo at
+> [goldlion123rp.github.io/GeminiTTS](https://goldlion123rp.github.io/GeminiTTS/)** —
+> BYOK only, on the visitor's own key, with no server behind it. The live
+> transcript and PDF/DOCX upload need the node build, which Pages cannot run;
+> see [the Pages demo](#the-pages-demo-static-and-the-node-app-the-product).
 >
 > The approved design spec and the phased build plan, with a live progress
 > checklist, are tracked in `docs/superpowers/`.
@@ -92,6 +94,7 @@ whether the built server can see it.
 | `bun install` | Install dependencies from `bun.lock` |
 | `bun run dev` | Start the dev server with HMR on `localhost:4321` |
 | `bun run build` | Production build into `./dist/` (`client/` + `server/`) |
+| `PAGES_TARGET=pages bun run build` | Static Pages build — prerenders the three pages into `dist/client` and sets `base: '/GeminiTTS/'` |
 | `bun run preview` | Serve the production build locally |
 | `bun run check` | Type check — `astro check`, must report zero errors |
 | `bun run start` | Run the built server, **loading `.env`** (see the warning below) |
@@ -140,6 +143,7 @@ pull request; neither is enforced in CI yet because there is no CI.
 ├── .agents/
 │   ├── rules/                  # research + planning rules, auto-loaded
 │   └── skills/                 # agent skills, auto-discovered
+├── .github/workflows/pages.yml # static demo deploy → GitHub Pages
 ├── .env.example                # template — copy to .env, never commit .env
 ├── AGENTS.md                   # project memory — stack, commands, conventions
 ├── DESIGN.md                   # design system source of truth
@@ -217,32 +221,37 @@ state and costs no quota: it reads `models?pageSize=1`, never a generation.
 `bun run build && bun run start` is a working local deployment. There is no
 Dockerfile and no CI — neither was in scope.
 
-### GitHub Pages is not a compatible host
+### The Pages demo (static) and the node app (the product)
 
-> [!CAUTION]
-> This app is `output: 'server'` on `@astrojs/node` (`mode: 'standalone'`).
-> **GitHub Pages can only serve static files**, so a Pages build of this repo
-> cannot run the app: there is no `dist/server/entry.mjs` to execute, no Node
-> runtime, and no way to supply `GEMINI_API_KEY`. Every `/api/*` route —
-> `/api/health`, `/api/live-token`, `/api/transcribe`, `/api/synthesize`,
-> `/api/extract`, `/api/estimate` — is a server route and will simply be absent
-> from the published output.
+> [!IMPORTANT]
+> Two deployment targets come out of one source tree. The node deployment is
+> the product; the Pages deployment is a static demo of the parts that need no
+> server.
 
-A Pages build configured on `main` `/` (root) without a workflow uses GitHub's
-legacy publishing path, which copies the branch's source tree, not an Astro
-build. The result is a directory of `.md` and `.ts` files, not the site.
+| | Node (default) | Pages demo (`PAGES_TARGET=pages`) |
+| :--- | :--- | :--- |
+| `output` | `'server'` | `'static'`, same adapter retained |
+| Build | `bun run build` | `PAGES_TARGET=pages bun run build` |
+| Served by | `bun run start` | `dist/client`, uploaded by Actions |
+| Mounted at | `/` | `/GeminiTTS/` (`base`) |
+| Gemini key | operator's, in `.env` | **the visitor's**, in `sessionStorage` |
+| Paste → audio (TTS) | yes | yes |
+| Batch STT | yes | yes |
+| Live transcript, PDF/DOCX upload | yes | no — those two are server routes |
 
-Two workable routes, in order of effort:
+The Pages build works because of the provider seam in
+[`src/lib/client/provider.ts`](src/lib/client/provider.ts): under BYOK, TTS and
+batch STT go straight from the browser to Google, so the demo needs no server
+secret at any point. The two features the demo cannot run —
+`live-token` (the key must ride the WebSocket query string) and `extract`
+(`mammoth`/`unpdf` need Node) — are pinned `always-server` in the routing table,
+and their requests still go to our origin; only the answer is translated, so a
+visitor gets a sentence explaining the limit instead of a `SyntaxError` from
+Pages' 404 page.
 
-1. **Static build + Pages Actions** — switch to `output: 'static'`, pre-render
-   the three pages, and move the Gemini calls to the existing BYOK direct path
-   in `src/lib/client/gemini-direct.ts` so the browser talks to Google and no
-   server secret is needed at all. This deletes the server-rendering guarantee
-   documented in `AGENTS.md` and is a real architectural change, not a config
-   tweak.
-2. **A Node-capable host** — Railway, Render, Fly, or any VPS running
-   `bun run build && bun run start`. Zero code change; this is what the app
-   expects.
+`.github/workflows/pages.yml` builds and deploys on every push to `main`. In
+**Settings → Pages**, Source must be **GitHub Actions** — the "Deploy from a
+branch" option runs the legacy Jekyll path and fails.
 
 ---
 

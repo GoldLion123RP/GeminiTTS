@@ -319,6 +319,38 @@ describe('request routing', () => {
 		expect(fetches[0].url).toBe('/api/extract');
 	});
 
+	// POSITIVE CONTROL for the static Pages build. A deployment with no server
+	// answers with GitHub's own 404 HTML, and the panel's `response.json()`
+	// would then throw a bare `SyntaxError` at the user. The request still has
+	// to be *sent* — the two `always-server` routes are asserted above, and that
+	// property is not up for negotiation — but the answer has to be readable.
+	it('turns a non-JSON 404 into a readable error rather than a parse failure', async () => {
+		globalThis.fetch = (async () =>
+			new Response('<!doctype html><title>There isn\'t a GitHub Pages site here.</title>', {
+				status: 404,
+				headers: { 'content-type': 'text/html' },
+			})) as unknown as typeof fetch;
+
+		const response = await request('extract', { name: 'a.pdf', data: 'aGk=' });
+		const body = (await response.json()) as { error?: string };
+
+		expect(response.status).toBe(501);
+		expect(body.error).toContain('Paste the text instead');
+	});
+
+	it('leaves a JSON failure from our own server alone', async () => {
+		globalThis.fetch = (async () =>
+			new Response(JSON.stringify({ error: 'Language is unsupported.' }), {
+				status: 400,
+				headers: { 'content-type': 'application/json' },
+			})) as unknown as typeof fetch;
+
+		const response = await request('live-token', { language: 'xx' });
+
+		expect(response.status).toBe(400);
+		expect(((await response.json()) as { error: string }).error).toBe('Language is unsupported.');
+	});
+
 	// The estimate assertion that matters most: no fetch at all, and the body
 	// still parses, because the panels branch on `.json()` either way.
 	it('answers estimate locally with no network call', async () => {

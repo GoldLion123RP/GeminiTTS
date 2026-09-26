@@ -159,12 +159,47 @@ function json(body: unknown, status = 200): Response {
 }
 
 async function post(url: string, body: Record<string, unknown>, signal?: AbortSignal): Promise<Response> {
-  return fetch(url, {
+  const response = await fetch(url, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
     signal,
   });
+  return explainMissingServer(url, response);
+}
+
+/**
+ * Turn "there is no server here" into a sentence a person can act on.
+ *
+ * WHY THIS IS IN `post` AND NOT IN THE ROUTING TABLE. The obvious fix for the
+ * static Pages build is to skip the fetch when there is no server, but that
+ * would make an `always-server` endpoint's behaviour depend on a build flag —
+ * and those two endpoints are `always-server` precisely because a browser must
+ * not be trusted with the operation. `provider.test.ts` asserts that
+ * `live-token` and `extract` reach our origin even under BYOK, and it is right
+ * to. So the request still goes out; only the *answer* is translated.
+ *
+ * GitHub Pages answers an unknown path with its own 404 HTML page. Left alone
+ * that surfaces as a bare `SyntaxError: Unexpected token '<'` from the
+ * caller's `response.json()` — a stack trace as user-facing copy, on exactly
+ * the two features the static build cannot run. Any non-JSON failure gets the
+ * same plain-language message, which is true for a misconfigured reverse proxy
+ * too.
+ */
+async function explainMissingServer(url: string, response: Response): Promise<Response> {
+  if (response.ok) return response;
+  const contentType = response.headers.get('content-type') ?? '';
+  if (contentType.includes('application/json')) return response;
+
+  const endpoint = url.replace(/^\/api\//, '');
+  const message =
+    endpoint === 'extract'
+      ? 'File upload needs the server build, which this static demo does not run. Paste the text instead.'
+      : endpoint === 'live-token'
+        ? 'The live transcript needs the server build, which this static demo does not run. Recording still works — stop, and the full transcript is produced.'
+        : 'The server build is not available here. Run it with `bun run build && bun run start`.';
+
+  return json({ error: message }, 501);
 }
 
 /**

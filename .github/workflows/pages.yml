@@ -1,0 +1,70 @@
+# Static demo on GitHub Pages.
+#
+# GitHub Pages serves files, not processes, so this workflow builds the static
+# target — `PAGES_TARGET=pages`, which flips `output` to 'static' and sets
+# `base: '/GeminiTTS/'` — and uploads `dist/client`. The `prerender = false`
+# API routes are still emitted into `dist/server`; they are simply not uploaded,
+# because there is nothing on Pages that can execute them. What the demo runs is
+# the BYOK path, where the browser talks to Google with the visitor's own key
+# and no server secret is involved at any point.
+#
+# The node deployment is untouched: `bun run build && bun run start` is still
+# `output: 'server'` and is the complete product.
+name: Deploy static demo to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never two deploys at once, and never deploy a stale build over a newer one.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # No `GEMINI_API_KEY` here, and none is wanted: the static build must not
+      # depend on a secret it does not use. `src/env.d.ts` types the variable
+      # optional for exactly this reason.
+      - name: Build the static site
+        env:
+          PAGES_TARGET: pages
+        run: bun run build
+
+      - name: Type check
+        run: bun run check
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          # `dist/client` is the static site. Uploading `dist` would publish the
+          # server bundle's contents as if they were web assets.
+          path: dist/client
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

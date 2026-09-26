@@ -12,6 +12,7 @@ Detail behind [`AGENTS.md`](../AGENTS.md). Read on demand.
 | `bun test` | Run unit tests (no separate test framework) |
 | `bun run dev` | Dev server with HMR at `http://localhost:4321` |
 | `bun run build` | Production build into `./dist/` |
+| `PAGES_TARGET=pages bun run build` | Static Pages build — prerenders the three pages into `dist/client` and sets `base: '/GeminiTTS/'` |
 | `bun run start` | Run the built server, loading `.env` via Node's `--env-file-if-exists` |
 | `bun run smoke` | Start the built server and check the page, both tools on their own routes, the shared chrome, `/api/health`, and key visibility |
 | `bun run preview` | Serve the production build locally |
@@ -390,6 +391,42 @@ Phase 4 added a deliberate exception, and the distinction matters: a Gemini call
 carries their credential, not ours. The server key is untouched by that path —
 which is the whole point of the mode, and why `src/lib/client/` is split out
 from the rest of `src/lib/`.
+
+### The static Pages demo: `PAGES_TARGET=pages`
+
+One source tree, two targets, switched in `astro.config.mjs`:
+
+| | default | `PAGES_TARGET=pages` |
+| :--- | :--- | :--- |
+| `output` | `'server'` | `'static'` — the adapter stays, so the `prerender = false` routes still build into `dist/server/` |
+| `base` | unset (`/`) | `/GeminiTTS/` |
+| uploaded | `dist/server/entry.mjs` | `dist/client/` |
+
+Astro 5 merged `output: 'hybrid'` into `'static'`, which is what makes the
+second column possible: pages prerender, opt-out routes are still emitted, and
+the build does not error on `prerender = false`. What Pages never gets is
+`dist/server/`, because there is nothing there that can execute it.
+
+**Consequences to keep in mind:**
+
+- **`base` is not optional there.** A repository site lives at `/GeminiTTS/`,
+  and Astro rewrites `import.meta.env.BASE_URL` but *not* hand-written
+  `href="/speech-to-text"` strings. Every internal link therefore goes through
+  `withBase()` in `src/lib/base.ts`; `NAV_ITEMS` in `src/lib/nav.ts` stays a
+  plain route table and the prefixing happens at render time. A new component
+  that hardcodes `href="/"` reintroduces a 404 on Pages.
+- **The switch lives in the config, not in the routes.** Astro 5 removed
+  dynamic `prerender` exports, so `export const prerender = someEnvVar` is no
+  longer available as a seam.
+- **Two features are missing by design.** `live-token` and `extract` are
+  `always-server` in the provider table — the Live handshake puts the key in a
+  query string, and `mammoth`/`unpdf` need Node. Their requests still go to our
+  origin on Pages; `explainMissingServer()` in `provider.ts` translates the
+  non-JSON 404 into a 501 with a readable message. Gating the *fetch* on a
+  build flag instead would have made an `always-server` route conditional, which
+  `provider.test.ts` refuses to allow, correctly.
+- **No key in CI.** The Pages workflow sets no `GEMINI_API_KEY`, deliberately:
+  the static build must not depend on a secret it does not use.
 
 ### The Live socket URL is served, not built client-side
 

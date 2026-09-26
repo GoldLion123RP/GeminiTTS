@@ -33,6 +33,7 @@
 import FeatureCard from '../components/FeatureCard.astro';
 import Hero from '../components/Hero.astro';
 import Layout from '../layouts/Layout.astro';
+import { withBase } from '../lib/base';
 ---
 
 <Layout
@@ -54,13 +55,13 @@ import Layout from '../layouts/Layout.astro';
 		*/}
 		<div class="mt-8 flex flex-wrap items-center gap-3">
 			<a
-				href="/speech-to-text"
+				href={withBase('/speech-to-text')}
 				class="inline-flex h-10 items-center rounded-pill bg-ink px-3.5 text-base leading-5 font-medium text-on-primary hover:opacity-90"
 			>
 				Speech to text
 			</a>
 			<a
-				href="/text-to-speech"
+				href={withBase('/text-to-speech')}
 				class="inline-flex h-10 items-center rounded-pill border border-hairline bg-elevated px-3.5 text-base leading-5 font-medium text-ink hover:bg-hairline-soft"
 			>
 				Text to speech

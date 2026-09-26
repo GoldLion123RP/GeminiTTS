@@ -20,6 +20,7 @@
  * and the type are unchanged from the original inlined footer.
  */
 import { visibleNavItems } from '../lib/nav';
+import { withBase } from '../lib/base';
 
 const items = visibleNavItems();
 ---
@@ -40,7 +41,7 @@ const items = visibleNavItems();
 			{
 				items.map((item) => (
 					<a
-						href={item.href}
+						href={withBase(item.href)}
 						class="px-2 py-1 text-sm leading-5 text-body rounded-full hover:text-ink"
 					>
 						{item.label}

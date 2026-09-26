@@ -20,6 +20,7 @@
  * (see the note there) — Phase 3 flips their flags.
  */
 import { isActive, visibleNavItems } from '../lib/nav';
+import { withBase } from '../lib/base';
 import ThemeToggle from './ThemeToggle.astro';
 
 const pathname = Astro.url.pathname;
@@ -62,7 +63,7 @@ const items = visibleNavItems();
 		    wordmark is a brand link that happens to point home; the nav item is
 		    the thing that represents a location, so it owns the attribute. */}
 		<a
-			href="/"
+			href={withBase('/')}
 			class="text-base leading-5 font-semibold tracking-normal text-ink latin:tracking-[-0.04em]"
 		>
 			GeminiTTS
@@ -75,7 +76,7 @@ const items = visibleNavItems();
 			{
 				items.map((item) => (
 					<a
-						href={item.href}
+						href={withBase(item.href)}
 						aria-current={isActive(pathname, item.href) ? 'page' : undefined}
 						class:list={[
 							'px-2 py-1 text-sm leading-5 rounded-full',
@@ -149,7 +150,7 @@ const items = visibleNavItems();
 			{
 				items.map((item) => (
 					<a
-						href={item.href}
+						href={withBase(item.href)}
 						aria-current={isActive(pathname, item.href) ? 'page' : undefined}
 						class:list={[
 							'px-2 py-2 text-sm leading-5 rounded-full',
