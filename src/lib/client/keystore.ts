@@ -30,8 +30,22 @@ const MODE_KEY = 'geminitts.byok.mode';
 
 export type ProviderMode = 'server' | 'byok';
 
-/** Google auth keys are `AIza…`; anything else is rejected before it is stored. */
-const KEY_PATTERN = /^AIza[0-9A-Za-z_-]{20,}$/;
+/**
+ * Two key formats are in circulation, and accepting only the old one locks out
+ * every current key.
+ *
+ * Google moved AI Studio from "traffic" keys to "auth" keys: new keys are issued
+ * as `AQ.Ab…`, unrestricted `AIza…` keys were rejected from 19 June 2026, and
+ * `AIza…` keys are rejected outright from September 2026. Both are therefore
+ * legal input today, and an `AIza`-only check is not a stricter check — it is a
+ * check that rejects valid keys while passing every malformed one.
+ *
+ * The `AQ.` body is matched without pinning the `Ab` that current keys happen to
+ * carry, because the point of this test is to catch a pasted URL or a truncated
+ * paste, not to authenticate. The suffix length is the same loose floor in both
+ * branches: long enough that no real paste is cut, short enough not to matter.
+ */
+const KEY_PATTERN = /^(?:AIza[0-9A-Za-z_-]{20,}|AQ\.[0-9A-Za-z_-]{20,})$/;
 
 /**
  * Guarded so this module is importable from a plain unit test and from SSR.

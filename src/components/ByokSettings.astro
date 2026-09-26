@@ -100,7 +100,7 @@
 				type="password"
 				autocomplete="off"
 				spellcheck="false"
-				placeholder="AIza…"
+				placeholder="AQ.Ab… or AIza…"
 				class="w-full rounded-app border border-hairline bg-elevated px-3 py-2 text-sm leading-5 text-ink"
 			/>
 			<p class="text-xs leading-4 text-mute">
@@ -251,7 +251,7 @@
 				return;
 			}
 			if (!looksLikeGeminiKey(value)) {
-				say('That does not look like a Gemini key. It should start with AIza.', 'error');
+				say('That does not look like a Gemini key. Keys from AI Studio start with AQ.Ab (or AIza on older keys).', 'error');
 				return;
 			}
 			writeKey(value, remember?.checked ?? false);

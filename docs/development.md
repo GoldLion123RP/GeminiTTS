@@ -125,7 +125,9 @@ bun run build
 bun run check:secrets
 ```
 
-It scans `dist/` for a key *shape* (`AIza…`), then asserts in the source that
+It scans `dist/` for a key *shape* (`AIza…` or `AQ.Ab…` — Google issues
+auth keys now, and a scanner that only knew the old prefix would pass a real
+key), then asserts in the source that
 only `gemini-direct.ts` and `health.ts` attach `x-goog-api-key`, that the browser
 transport's host is Google, and that the key is never interpolated into a URL.
 Matches are reported as `file:line`, never as content, so the gate cannot leak
@@ -455,7 +457,7 @@ fail teaches people to ignore greps.
 
 What still holds, and what `bun run check:secrets` now enforces:
 
-- no `AIza…`-shaped literal anywhere in `dist/`;
+- no `AIza…`- or `AQ.…`-shaped literal anywhere in `dist/`;
 - `x-goog-api-key` is attached in exactly one module, and its host is Google;
 - the key is never interpolated into a URL, which is the one thing the Live
   socket needs and the one thing a `fetch` call must never do.

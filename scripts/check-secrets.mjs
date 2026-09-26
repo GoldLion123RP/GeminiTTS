@@ -45,8 +45,15 @@ import { join, relative } from 'node:path';
 const TEXT_EXTENSIONS = new Set(['.js', '.mjs', '.cjs', '.html', '.css', '.json', '.map', '.txt', '.astro']);
 const MAX_BYTES = 8 * 1024 * 1024;
 
-/** Mirrors `KEY_PATTERN` in `src/lib/client/keystore.ts`. */
-const KEY_PATTERN = /AIza[0-9A-Za-z_-]{20,}/g;
+/**
+ * Mirrors `KEY_PATTERN` in `src/lib/client/keystore.ts`.
+ *
+ * Both prefixes, and the `AQ.` one is the one Google issues today. A scanner
+ * that only knew `AIza` would report PASS on a build containing a real, current
+ * key — the failure mode this gate exists to prevent, arriving through a key
+ * format change rather than a careless paste.
+ */
+const KEY_PATTERN = /(?:AIza|AQ\.)[0-9A-Za-z_-]{20,}/g;
 
 const DIST = 'dist';
 
@@ -140,20 +147,26 @@ function scan(files) {
 console.log('=== positive control ===');
 // A synthetic key. Not a credential: 35 x characters after the prefix, chosen
 // so it satisfies KEY_PATTERN without being a plausible secret.
-const controlKey = `AIza${'x'.repeat(35)}`;
+// Two synthetic keys, one per live format. Not credentials: 35 x characters
+// after each prefix, chosen so they satisfy KEY_PATTERN without being plausible
+// secrets. A single control would leave the other prefix unproven, and an
+// unproven prefix is exactly how a gate passes a leak.
 const controlDir = mkdtempSync(join(tmpdir(), 'geminitts-secret-gate-'));
-const controlFile = join(controlDir, 'control.js');
-writeFileSync(controlFile, `const key = "${controlKey}";\n`);
+const controlKeys = { legacy: `AIza${'x'.repeat(35)}`, auth: `AQ.Ab${'x'.repeat(33)}` };
 
-const controlHits = scan([controlFile]);
-rmSync(controlDir, { recursive: true, force: true });
+for (const [label, controlKey] of Object.entries(controlKeys)) {
+	const controlFile = join(controlDir, `control-${label}.js`);
+	writeFileSync(controlFile, `const key = "${controlKey}";\n`);
 
-if (controlHits.length === 0) {
-	// The loudest possible failure: the gate would report PASS on anything.
-	fail('positive control MISSED — the detector found nothing in a file that contains a key. The gate is broken; fix it before trusting any result below.');
-} else {
-	console.log(`pass  detector found the control key at ${controlHits[0]}`);
+	const controlHits = scan([controlFile]);
+	if (controlHits.length === 0) {
+		// The loudest possible failure: the gate would report PASS on anything.
+		fail(`positive control MISSED (${label} format) — the detector found nothing in a file that contains a key. The gate is broken; fix it before trusting any result below.`);
+	} else {
+		console.log(`pass  detector found the ${label}-format control key at ${controlHits[0]}`);
+	}
 }
+rmSync(controlDir, { recursive: true, force: true });
 
 console.log('\n=== build output ===');
 let files = [];

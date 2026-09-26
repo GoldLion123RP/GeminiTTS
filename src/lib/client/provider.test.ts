@@ -80,6 +80,27 @@ describe('looksLikeGeminiKey', () => {
 	it('rejects an empty string', () => {
 		expect(looksLikeGeminiKey('   ')).toBe(false);
 	});
+
+	// The bug this exists for. Google issues new AI Studio keys as `AQ.Ab…`,
+	// rejected `AIza…` keys from September 2026, and an `AIza`-only check made
+	// every current key unusable while still passing every malformed paste. The
+	// test is named for the format, not the length, so the next prefix change
+	// fails here instead of in a user's face.
+	it('accepts a current AQ auth key', () => {
+		expect(looksLikeGeminiKey(`AQ.Ab${'x'.repeat(35)}`)).toBe(true);
+	});
+
+	it('accepts a legacy AIza key', () => {
+		expect(looksLikeGeminiKey(FAKE_KEY)).toBe(true);
+	});
+
+	it('still rejects a bare AQ with no key body', () => {
+		expect(looksLikeGeminiKey('AQ.')).toBe(false);
+	});
+
+	it('rejects the literal prefix a user might type as a placeholder', () => {
+		expect(looksLikeGeminiKey('AQ.Ab')).toBe(false);
+	});
 });
 
 describe('normalizeKey', () => {

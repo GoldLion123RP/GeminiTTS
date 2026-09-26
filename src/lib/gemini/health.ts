@@ -64,14 +64,20 @@ export interface HealthReport {
 }
 
 /**
- * The key shape, scrubbed from anything that leaves this module.
+ * The key shapes, scrubbed from anything that leaves this module.
  *
  * This mirrors `looksLikeGeminiKey` in `lib/client/keystore.ts` but is written
  * independently on purpose: a server module must not import a client module,
  * and a secret-scrubbing rule that depends on a browser `Storage` object is
  * one refactor away from not running at all.
+ *
+ * BOTH prefixes, and the second one is the live one. Google issues new AI
+ * Studio keys as `AQ.Ab…`; a scrubber that only knew `AIza` would pass an `AQ`
+ * key straight through into a `detail` string, which is served over
+ * `/api/health`. A redaction rule that silently stopped matching is worse than
+ * no rule, because it reads as coverage.
  */
-const KEY_LIKE = /AIza[0-9A-Za-z_-]{5,}/g;
+const KEY_LIKE = /(?:AIza|AQ\.)[0-9A-Za-z_-]{5,}/g;
 
 /** Replaces anything key-shaped with a fixed, obviously-redacted marker. */
 export function redact(text: string): string {

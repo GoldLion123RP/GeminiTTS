@@ -85,6 +85,15 @@ describe('redact', () => {
     expect(redact(`key=${FAKE_KEY} trailing`)).toBe('key=AIza… trailing');
   });
 
+  // A scrubber that stopped matching would read as coverage while letting a real
+  // key through into `detail`, which is served over /api/health. New keys are
+  // `AQ.Ab…`, so this is the format that actually matters now.
+  test('scrubs a current AQ auth key too', () => {
+    const authKey = `AQ.Ab${'S'.repeat(35)}`;
+    expect(redact(`key=${authKey} trailing`)).toBe('key=AIza… trailing');
+    expect(redact(authKey)).not.toContain(authKey);
+  });
+
   test('leaves ordinary text alone', () => {
     expect(redact('GEMINI_API_KEY is not set.')).toBe('GEMINI_API_KEY is not set.');
   });
