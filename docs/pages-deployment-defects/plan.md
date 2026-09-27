@@ -755,7 +755,7 @@ data folder, and the evidence document. Every command quoted in the new section 
 been run in this session.
 
 **Result, 2026-09-27.** Met. The section written is
-[`docs/development.md` → Deployment targets](../../development.md#deployment-targets),
+[`docs/development.md` → Deployment targets](../development.md#deployment-targets),
 and it exists because writing it produced two findings the plan did not anticipate.
 
 **Every command in it was run first, which is how the second finding surfaced.**

@@ -159,8 +159,9 @@ Rules:
 - If a temp file turns out to be worth keeping, move it into the relevant
   `docs/<topic-slug>/` folder and register it in `docs/README.md`
   (`bun run docs:sync`).
-- `docs/plans/` is legacy. Never write a new plan, audit, or evidence file
-  there; the contract above replaced it.
+- `docs/plans/` is retired. It was removed on 2026-09-27 and its two in-flight
+  plans now live in `docs/shell-theme-byok/` and `docs/pages-deployment-defects/`.
+  Never recreate it; the contract above replaced it.
 - `docs/archive/` is for documentation that is superseded but still worth
   reading. Never delete history; move it there and note what replaced it.
 

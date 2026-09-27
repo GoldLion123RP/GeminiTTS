@@ -6,7 +6,7 @@ Doc-Type: Full (architectural design spec; implementation plan to follow)
 <!-- desc: Architectural design spec for the single-page Gemini-backed TTS app. Approved 2026-09-26. Archived 2026-09-27: implemented by the GeminiTTS implementation plan; the single-page layout it describes was later split into three pages. -->
 
 > [!NOTE]
-> Archived because it was implemented, not because it was wrong. Its architecture, pipeline, and secret-boundary decisions still describe the shipped app; its **single-page** layout section no longer does — see the shell/theme/multi-page plan in [`../plans/`](../plans/) and [`DESIGN.md`](../../DESIGN.md), which win where they differ.
+> Archived because it was implemented, not because it was wrong. Its architecture, pipeline, and secret-boundary decisions still describe the shipped app; its **single-page** layout section no longer does — see the shell/theme/multi-page plan in [`../shell-theme-byok/`](../shell-theme-byok/) and [`DESIGN.md`](../../DESIGN.md), which win where they differ.
 
 A single-page Astro application providing two speech capabilities backed by the Gemini API:
 
