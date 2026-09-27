@@ -1,4 +1,4 @@
-Status: In Execution (Phases 0–4 complete; final gate F.1–F.5 and D15 outstanding) | Doc-Type: Full
+Status: Complete — Phases 0–4 and D15 (Q.1–Q.2) done; final gate F.1, F.2, F.3, F.5 discharged 2026-09-27; **F.4 (browser screenshot pass) open and blocked — no browser in this environment, see `D18`** | Doc-Type: Full
 
 # Pages Deployment, BYOK Diagnostics, Light-Theme Borders & Panel Spacing — Implementation Plan
 
@@ -503,6 +503,45 @@ it is recorded rather than absorbed. It is a performance defect with a measured
 cause and a one-line fix, not a hypothesis — and it is the only item in this plan
 that was found by fixing something else.
 
+**Result, 2026-09-27 (Q.1 + Q.2).** Both done. `src/lib/client/quota.ts` now holds a
+single lazily-constructed `Intl.DateTimeFormat` behind `getPacificFormatter()`, with
+`undefined` / `null` distinguishing "not tried yet" from "no ICU here" so a minimal
+server-side render still takes the documented `toISOString()` fallback. The code
+landed in `1d0713f` alongside the accessibility work; what was outstanding was
+*recording* it — the checklist still showed Q.1/Q.2 open against code that already
+existed. That is the same failure as `D12` and `D14` in a new costume: a control
+that cannot fail is not a control, and a checklist that cannot go stale is not
+either.
+
+**Q.2 measured, and the measurement is the reason it is worth having.**
+`data/quota-formatter-bench.mjs` runs one `recordSpend` pass over a full 200-entry
+log twice — once against a per-call `Intl.DateTimeFormat` (the old shape) and once
+against a hoisted one — in the same process, after warm-up, averaged over 5 runs.
+
+```
+$ bun docs/pages-deployment-defects/data/quota-formatter-bench.mjs
+per-call Intl (before)             18.69 ms  (201 format calls)
+hoisted Intl (after)               0.22 ms  (201 format calls)
+
+collapse factor: 87x
+```
+
+Three runs put the hoisted figure at 0.20–0.27 ms, so the honest claim is
+"**~19 ms → ~0.2 ms**", not one number. That lands squarely inside the "tens of
+milliseconds" `D15` predicted, on a machine whose cost per construction this time
+measured ~0.09 ms rather than `D13`'s ~0.31 ms — the same load-dependent spread
+`D15` already called out, and the reason the figure is quoted as a range.
+
+The test file was not touched, and did not need a timeout:
+
+```
+$ bun test src/lib/client/quota.test.ts
+ 16 pass
+ 0 fail
+ 35 expect() calls
+Ran 16 tests across 1 file. [30.00ms]      # was 13.22s
+```
+
 
 
 ---
@@ -849,6 +888,101 @@ thing that would confirm by eye what Phases 2 and 3 proved arithmetically.
 
 ---
 
+### Final gate — F.1–F.5 (2026-09-27)
+
+**Goal.** Close the plan against one artifact rather than four per-phase ones, and
+stop carrying a checklist that can go stale.
+
+**F.1 — all six gates, one sequence, static target. Met.** `PAGES_TARGET=pages`
+exported for the whole sequence, per `D17` — `check:panel` rebuilds the project and
+inherits the variable, so an unordered run is a different check.
+
+```
+$ export PAGES_TARGET="pages"; bun run build          # BUILD_EXIT=0
+$ bun run check:contrast   # EXIT=0  2 enforcing light border pairs, 3.22:1 / 3.36:1
+$ bun run check:secrets    # EXIT=0  no key-shaped literal in dist/ (29 files scanned)
+$ bun run check:routes     # EXIT=0
+$ bun run check:shell      # EXIT=0
+$ bun run check:panel      # EXIT=0  watchdog assertion RAN (not skipped)
+$ bun run check:spacing    # EXIT=0
+```
+
+One thing is worth recording rather than glossing: `check:panel`'s watchdog line
+printed `pass the watchdog stays silent on a working page` where every earlier phase
+in this plan recorded `skip watchdog not testable on a node build`. The static
+target has a `.html` on disk to drive, so on this target **two** assertions run
+where the node build runs one. The skip is a property of the target, not a defect
+in the gate — but it means "the six gates are green" is a *stronger* claim on the
+static build than on the node build, and the plan had only ever recorded the weaker
+one.
+
+**F.2 — `bun test`. Met.**
+
+```
+$ bun test
+ 344 pass
+ 0 fail
+ 4930 expect() calls
+Ran 344 tests across 21 files. [3.51s]
+```
+
+Same count Phase 2 recorded. The 260-call `recordSpend` test that `D13` reported
+as marginal completes inside the 3.51 s for the whole suite, in the suite, with
+bun's default 5 s timeout, unmodified.
+
+**F.3 — no key-shaped literal in `dist/client/`. Met**, and the `D16` distinction
+holds in the artifact rather than only on paper.
+
+```
+$ grep -rEo 'AIza[0-9A-Za-z_-]{5,}|AQ\.[0-9A-Za-z_-]{5,}' dist/client/
+  (no output)
+
+$ grep -rEo 'GEMINI_API_KEY' dist/client/ | sort | uniq -c
+      1 dist/client/_astro/provider.Bs6h2wPQ.js:GEMINI_API_KEY   <- the name, in UI copy
+```
+
+The name is the user's-facing "check `GEMINI_API_KEY` in your `.env`" string. The
+`AIza` pattern in `classify.ts:59` does not match a key-shaped literal, so the
+honest statement of the criterion is the one `check:secrets` already tests.
+
+**F.4 — §5.3 browser pass. Blocked, and recorded as `D18`.** Three of the eight
+rows need no eye and are discharged against the built artifact:
+
+| §5.3 row | How it was discharged | Result |
+| --- | --- | --- |
+| BYOK pre-selected, server option says it is unavailable | read the static build's HTML | `byok-provider-byok checked`, `byok-provider-server not-checked`; the panel leads with `Required on this deployment` and the server option carries `not available on this deployment`; `BASE_URL` rewritten to `/GeminiTTS/`, so `serverAvailable()` is false by construction |
+| No two stacked panels touch | `check:spacing` above, plus the class list in the artifact | `#tts` carries no margin (first child), `#quota` and `#byok` both carry `mt-6`, and both rows pass |
+| A visible boundary in both themes | `check:contrast` above | light 3.22:1 / 3.36:1 enforcing; dark **excluded and still 1.22–1.31:1** — see the `D14` note, this is a known open gap, not a pass |
+
+The remaining five rows — the light/dark screenshots, the focus-ring tab order, the
+`agent-browser a11y` sweep, and the two live-key probe rows — need a browser. There
+is none in this container, and the attempt is worth recording because it is the
+third time the same item has been deferred:
+
+```
+$ bun x agent-browser@0.27.0 --version        # 0.27.0 — the CLI installs
+$ bun x agent-browser@0.27.0 install
+✗ Failed to fetch version info: … chrome-for-testing/last-known-good-versions.json:
+  client error (Connect): invalid peer certificate: UnknownIssuer
+$ command -v google-chrome chromium chromium-browser chrome   # nothing
+$ apt-get install -y chromium
+E: Unable to locate package chromium
+```
+
+**D18 — F.4 is a human gate, and four consecutive phases treated it as a task.**
+The honest position is that the screenshot pass is the *only* part of this plan
+that no automated check can substitute for, and no environment in this session had a
+browser — the TLS interception in the Chrome download and the absent `apt` package
+are environmental, not a defect in the app. The plan is therefore closed with F.4
+**open and named**, not with F.4 quietly ticked. What is left is one command on a
+machine with a browser: serve `dist/client/` and look at the three routes in both
+themes. The arithmetic, the drift control, the gate and the artifact are all
+proven; the perceptual claim is not, and this document does not pretend otherwise.
+
+**F.5 — changelog.** Appended below.
+
+---
+
 ## 4. Progress checklist
 
 ```markdown
@@ -903,16 +1037,15 @@ thing that would confirm by eye what Phases 2 and 3 proved arithmetically.
         node build, silently and with exit 0. See `D17`.
   - [x] 4.6: **NEW** — five stale claims in `README.md` and `docs/agent-workflow.md`
         about work Phases 0–3 had already completed, corrected in the same turn.
-- [ ] **Queued — D15: hoist the `Intl.DateTimeFormat` out of `pacificDay`**
-  - [ ] Q.1: one module-level formatter in `src/lib/client/quota.ts`; `quota.test.ts` unchanged
-  - [ ] Q.2: measure the 200-entry `recordSpend` path before and after (tens of ms -> ~0)
-- [ ] **Final gate** — **not run.** Four things stand between this plan and a
-  verified close, and none of them is code:
-  - [ ] F.1: `check:contrast` `check:secrets` `check:routes` `check:shell` `check:panel` `check:spacing` all exit 0, **in one sequence on the static target**. Each group has been run and reported green in this plan, but never all six together against the same artifact — and `check:panel` rewrites `dist/`, so an unordered run is not the same check.
-  - [ ] F.2: `bun test` green. Last recorded 344 pass / 0 fail at the end of Phase 2; not re-run since Phase 3's `quota.test.ts` change.
-  - [ ] F.3: no key-**shaped literal** in `dist/client/` — restated from the criterion Phase 1 falsified, see `D16`. The literal name `GEMINI_API_KEY` is expected there and is not a failure.
-  - [ ] F.4: the §5.3 browser pass — light and dark screenshots of `/`, `/text-to-speech` and `/speech-to-text` to confirm by eye what Phases 2 and 3 proved arithmetically: a visible card boundary, and no two stacked panels touching. **Deferred by Phases 2, 3 and 4.**
-  - [ ] F.5: Changelog entry appended below
+- [x] **Queued — D15: hoist the `Intl.DateTimeFormat` out of `pacificDay`** — Complete 2026-09-27
+  - [x] Q.1: one module-level formatter in `src/lib/client/quota.ts`; `quota.test.ts` unchanged
+  - [x] Q.2: measure the 200-entry `recordSpend` path before and after (tens of ms -> ~0)
+- [ ] **Final gate** — run 2026-09-27; four of five discharged, F.4 blocked (§ F.4 below)
+  - [x] F.1: `check:contrast` `check:secrets` `check:routes` `check:shell` `check:panel` `check:spacing` all exit 0, **in one sequence on the static target**. Each group has been run and reported green in this plan, but never all six together against the same artifact — and `check:panel` rewrites `dist/`, so an unordered run is not the same check.
+  - [x] F.2: `bun test` green. Last recorded 344 pass / 0 fail at the end of Phase 2; not re-run since Phase 3's `quota.test.ts` change.
+  - [x] F.3: no key-**shaped literal** in `dist/client/` — restated from the criterion Phase 1 falsified, see `D16`. The literal name `GEMINI_API_KEY` is expected there and is not a failure.
+  - [ ] F.4: the §5.3 browser pass — light and dark screenshots of `/`, `/text-to-speech` and `/speech-to-text` to confirm by eye what Phases 2 and 3 proved arithmetically: a visible card boundary, and no two stacked panels touching. **Deferred by Phases 2, 3 and 4; attempted in the final gate and blocked — see `D18`.** The rows that do not need an eye *are* discharged against the built artifact.
+  - [x] F.5: Changelog entry appended below
 ```
 
 ---
@@ -959,21 +1092,45 @@ bun run check:secrets            # asserts no key-SHAPED literal in dist/
 # A `GEMINI_API_KEY|AIza|AQ\.` grep also matches, on purpose: see D16.
 ```
 
+> [!CAUTION]
+> On **POSIX shells** the target variable is exported for the *whole* sequence, not
+> set per command. `check:panel` rebuilds the project and inherits it, so
+> `PAGES_TARGET=pages bun run check:panel` in one command and `bun run build` in the
+> next leaves a **node** build sitting on a static artifact — 3 prerendered pages
+> become 0, exit 0, no message (`D17`). `export PAGES_TARGET=pages` at the top of the
+> sequence, `unset PAGES_TARGET` at the end.
+
+```bash
+# POSIX equivalent of the PowerShell above
+export PAGES_TARGET="pages"
+bun run build
+bun run check:panel        # inherits the variable -> static build
+bun run check:spacing
+unset PAGES_TARGET
+```
+
 The last command is the standing proof that the Phase 1 and Phase 2 work did not
 open a leak channel. Run it after every build.
 
 ### 5.3 Manual acceptance (browser)
 
-| Step | Expectation |
-| --- | --- |
-| Open the Pages build, never having chosen a provider | BYOK is pre-selected, the server option carries "not available on this deployment", and neither is discovered by an error. |
-| Paste a deliberately invalid key, press "Save and test" | Copy names the **key**. The words "audio", "format" and "voice" do not appear. The key is not persisted. |
-| Paste a valid key, press "Save and test" | `accepted`, within one round trip, no quota spent. Generate one WAV. |
-| Throttle the network to offline, press "Save and test" | `unknown` — "could not check", **not** "your key is wrong". |
-| Toggle light / dark, load `/`, both tool pages | Every card, input, select and checkbox row has a visible boundary. |
-| Inspect `/text-to-speech` and `/speech-to-text` | Four equal gaps in the panel column. No two cards touch. |
-| Tab through `/text-to-speech` in light mode | Every stop shows the 2px `link` focus ring at ≥ 3:1 against its own surface. |
-| `agent-browser a11y --tags wcag2a,wcag2aa` on all three routes | No new violations. |
+> [!WARNING]
+> **Status 2026-09-27: this table is `F.4`, and it is not discharged.** Three rows
+> below were verified against the built static artifact instead (marked ✔-artifact);
+> the rest need a real browser, and this environment has none — see `D18`. The table
+> is kept verbatim as the acceptance list for whoever runs it on a machine with a
+> browser.
+
+| Step | Expectation | |
+| --- | --- | --- |
+| Open the Pages build, never having chosen a provider | BYOK is pre-selected, the server option carries "not available on this deployment", and neither is discovered by an error. | ✔-artifact |
+| Paste a deliberately invalid key, press "Save and test" | Copy names the **key**. The words "audio", "format" and "voice" do not appear. The key is not persisted. | open |
+| Paste a valid key, press "Save and test" | `accepted`, within one round trip, no quota spent. Generate one WAV. | open |
+| Throttle the network to offline, press "Save and test" | `unknown` — "could not check", **not** "your key is wrong". | open |
+| Toggle light / dark, load `/`, both tool pages | Every card, input, select and checkbox row has a visible boundary. | open (light 3.22–3.36:1 ✔-arithmetic; dark is a **known excluded gap**) |
+| Inspect `/text-to-speech` and `/speech-to-text` | Four equal gaps in the panel column. No two cards touch. | ✔-artifact + `check:spacing` |
+| Tab through `/text-to-speech` in light mode | Every stop shows the 2px `link` focus ring at ≥ 3:1 against its own surface. | open |
+| `agent-browser a11y --tags wcag2a,wcag2aa` on all three routes | No new violations. | open |
 
 ### 5.4 Rollback
 
@@ -1001,3 +1158,5 @@ change. Two reversions need care:
 | 2026-09-27 | **Phase 2 complete.** `--color-hairline` (light) #ebebeb -> **#8c8c8c**, measured **3.22:1** on canvas and **3.36:1** on elevated. The plan's predicted figures (3.30 / 3.23) were wrong in ordering; the hex and the conclusion were not. `scripts/check-contrast.mjs`: border pairs now enter the exit code, `hairline-soft` moved to a stated exclusion (a fill, not a boundary), the "advisory" rationale comment replaced with the resolution, and `BORDER_PAIRS` keyed by theme. **D14**: the script duplicated its token list and never read `global.css`, so it could not fail on drift despite its header claiming it would; a `DRIFT` section now parses the stylesheet and both failure modes are proven by reverting the hex. The **dark** hairline (#262626, 1.22-1.31:1) is below 1.4.11 and was not fixed here - recorded in `BORDER_EXCLUSIONS`, `DESIGN.md` dark-ramp rules and the `docs/development.md` known-gap note. Two stale prose copies of `#ebebeb` (`README.md:269`, `DESIGN.md:243`) corrected. Verified: `check:contrast` exit 0 with both light border pairs enforcing; all six gates green; `bun run build` + `bun run check` exit 0 on both targets; `bun test` 344 pass / 0 fail; built CSS carries `8c8c8c` once and no `ebebeb`. `check:spacing` still red on the static build - that is Phase 3. Browser screenshot pass NOT run. |
 | 2026-09-27 | **Phase 3 complete.** One class: `mt-6` on the `ByokSettings` root `<section>`. `scripts/check-spacing.mjs` needed no change, because Phase 0 wrote it against the outcome (a non-zero gap) rather than against a class name. `check:spacing` GREEN on the static build with both positive controls firing. `bun run build` + `bun run check` exit 0 on both targets. Browser screenshot pass NOT run. |
 | 2026-09-27 | **Phase 4 complete.** `docs/development.md` gains a **Deployment targets** section: a three-row table (local dev / node host / GitHub Pages) stating where a key lives in each, why a static host has nowhere to put one, the `serverAvailable()` seam and its test, and one verification command per target with the output of running it today. `README.md` gains **Where a key belongs, per target** and loses three false claims. **D16**: the plan's own §5.2 proof grep (`GEMINI_API_KEY\|AIza\|AQ\.`) now matches on purpose - the variable's *name* in one user-facing string and `AIza` inside `classify.ts`'s redaction pattern, which ships to the browser precisely so upstream error text is scrubbed. Success criterion 7 restated as "no key-**shaped literal**", which is what `check:secrets` tests, and §5.2's command replaced by the gate. **D17**: a local `check:panel` run with no `PAGES_TARGET` in its environment replaces a static build with a node build - 3 prerendered pages become 0, exit 0, no message; the same guard CI already has is now documented for local runs in three places. Five stale claims corrected in the same turn per `AGENTS.md`: `check:spacing` "currently failing" in README, two "no CI" statements (CI exists and deploys the static target on every push), and two gate-maturity rows in `docs/agent-workflow.md`. Verified: `bun run docs:sync` exit 0 (7 documents, index byte-identical because it already listed this plan and its evidence); `bun run build` + `bun run check` exit 0 on both targets; `bun run smoke` exit 0 with `health 200 - configured`; `check:contrast` `check:secrets` `check:routes` `check:shell` exit 0 on the node build and `check:panel` `check:spacing` `check:secrets` exit 0 on the static one. **Final gate F.1-F.5 not run** - all six gates in one sequence, `bun test`, and the §5.3 browser pass are still outstanding. |
+| 2026-09-27 | **D15 closed (Q.1, Q.2).** The `Intl.DateTimeFormat` hoist had already landed in `1d0713f`; the checklist still showed Q.1/Q.2 open against code that existed, so the outstanding work was the record and the measurement, not the change. `data/quota-formatter-bench.mjs` measures one `recordSpend` pass over a full 200-entry log in both shapes, same process, after warm-up: **18.69 ms -> 0.22 ms, an 87x collapse** (hoisted figure 0.20-0.27 ms across three runs, so quoted as a range). `quota.test.ts` untouched and still needs no timeout: 16 pass / 0 fail in 30 ms, down from 13.22 s. |
+| 2026-09-27 | **Final gate F.1, F.2, F.3, F.5 discharged; F.4 blocked.** **F.1**: all six gates in one sequence on the static target, `PAGES_TARGET` exported for the whole sequence per `D17` - all exit 0. New observation worth keeping: `check:panel`'s watchdog assertion **runs** on the static target (`pass the watchdog stays silent on a working page`) where this plan had recorded `skip` on every node build, so "six gates green" is a stronger claim here than anywhere earlier in the plan. **F.2**: `bun test` 344 pass / 0 fail, 4930 `expect()` calls, 21 files, 3.51 s - the `D13` test is comfortably inside bun's default 5 s inside the suite. **F.3**: no key-shaped literal in `dist/client/`; the one `GEMINI_API_KEY` occurrence is the variable *name* in user-facing copy, exactly as `D16` predicted. **D18**: the §5.3 browser pass is blocked, not skipped - `agent-browser` 0.27.0 installs but cannot fetch Chrome (`invalid peer certificate: UnknownIssuer`), no system Chrome/Chromium is present, and `apt-get install chromium` finds no package. Three of the eight §5.3 rows were discharged against the built artifact instead (BYOK pre-selected and the static-deployment notice present in the prerendered HTML; the `mt-6` class list; the enforcing border ratios, with dark still an excluded known gap). The other five need an eye, so **F.4 stays open and named** and the plan closes with that gap stated rather than ticked. |
