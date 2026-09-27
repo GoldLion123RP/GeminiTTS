@@ -23,7 +23,8 @@ Detail behind [`AGENTS.md`](../AGENTS.md). Read on demand.
 | `bun run check:secrets` | Scan `dist/` and the client source for key material; run after `bun run build` |
 | `bun run check:routes` | Assert no test file under `src/pages/` is shipped as a live route; run after `bun run build` |
 | `bun run check:shell` | Assert the shell contract: the no-flash bootstrap ordering, the skip link, and the 640px nav switch (plan 6.2–6.4, structural half). Proven able to fail; has not yet caught a real defect |
-| `bun run check:panel` | Run the **shipped** TtsPanel bundle against a DOM stub and assert the cost gate opens when text is typed and when text is already in the box on load. **Caught a real defect** — see [The cost gate and the listener that was not there yet](#the-cost-gate-and-the-listener-that-was-not-there-yet) |
+| `bun run check:panel` | Run the **shipped** TtsPanel bundle against a DOM stub and assert the cost gate opens when text is typed and when text is already in the box on load, then run `check:spacing`. **Caught a real defect** — see [The cost gate and the listener that was not there yet](#the-cost-gate-and-the-listener-that-was-not-there-yet) |
+| `bun run check:spacing` | Assert every declared stack of sibling panels carries a non-zero vertical gap, read from the **built** HTML. **Caught a real defect** — the unspaced `ByokSettings` panel. Skips the real-page check on a node build (`output: 'server'` renders HTML on demand); `PAGES_TARGET=pages bun run build` puts the pages on disk, and CI asserts them there |
 | `bun run verify:stt` | One live STT recording that settles whether Smart mode is honoured or silently downgraded to Verbatim. **Never executed** — see [Verifying STT end to end](#verifying-stt-end-to-end) |
 
 `bun run build` and `bun run check` are the two gates. Run both before opening a

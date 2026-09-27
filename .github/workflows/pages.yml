@@ -73,6 +73,14 @@ jobs:
       # upload depends on — and a static deploy of a node build is not a build
       # failure, it is a successful upload of a site with no pages in it. That
       # is exactly what happened, and it shipped as a green run.
+      # `check:panel` already spawns this one, so running it again is
+      # deliberate duplication and not a mistake: this step is the one that
+      # survives a future edit to check-panel, and it runs against the artifact
+      # as it stands after every rebuild, which is the only state the upload
+      # depends on. Read-only, so it cannot replace the artifact.
+      - name: Vertical rhythm
+        run: bun run check:spacing
+
       - name: Assert the static output survived
         run: |
           for page in dist/client/index.html dist/client/text-to-speech/index.html dist/client/speech-to-text/index.html; do

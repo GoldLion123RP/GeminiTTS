@@ -144,18 +144,23 @@ Keep all temporary work inside the repo so it is inspectable and disposable.
 | Kind of file | Location |
 | :--- | :--- |
 | Scratch notes, intermediate data, throwaway analysis | `docs/.scratch/` |
-| Generated plans and specs | `docs/plans/` |
+| Generated plans and audits | `docs/<topic-slug>/` — one new topic folder per request, holding `plan.md`, `audit.md`, and `data/` only when web material was captured |
 | Superseded documentation | `docs/archive/` |
 | Anything a tool insists on writing elsewhere | `docs/.scratch/`, then move it back |
 
 Rules:
 
 - Never scatter temp files in the project root, `src/`, or the system temp dir.
+- Everything written stays on the project drive inside this repo. No other
+  drive, partition, profile directory, or system temp dir.
 - `docs/.scratch/` is gitignored — nothing there is ever committed.
 - Delete scratch files as soon as they stop being useful. Do not leave them for
   a later turn to clean up.
-- If a temp file turns out to be worth keeping, move it to `docs/plans/` and
-  register it in `docs/README.md` (`bun run docs:sync`).
+- If a temp file turns out to be worth keeping, move it into the relevant
+  `docs/<topic-slug>/` folder and register it in `docs/README.md`
+  (`bun run docs:sync`).
+- `docs/plans/` is legacy. Never write a new plan, audit, or evidence file
+  there; the contract above replaced it.
 - `docs/archive/` is for documentation that is superseded but still worth
   reading. Never delete history; move it there and note what replaced it.
 
@@ -195,3 +200,30 @@ the `<!-- sync:start -->` and `<!-- sync:end -->` markers. Run
 Never state that a build, typecheck, or test passed without pasting the actual
 command output. If a command was not run, say so. `code-skeptic` enforces this,
 and also checks whether the docs went stale.
+
+This section is the detail behind the **Verification** hard rule in
+[`AGENTS.md`](../AGENTS.md). That file holds the rule and wins on any conflict;
+what follows is the per-gate status it points at, and it is the only place that
+status lives. Update it in the same turn as a gate is added, gains a positive
+control, or catches a real defect.
+
+### Standing gates
+
+`check:contrast`, `check:secrets`, `check:routes`, `check:shell`,
+`check:panel`, and `check:spacing` are the standing gates. Run them; never
+assert that they pass. Each one carries a positive control, so it is proven able
+to fail — a gate that cannot fail is worse than no gate.
+
+| Gate | Command | Maturity |
+| :--- | :--- | :--- |
+| `check:contrast` | `bun run check:contrast` | Has caught a real defect. |
+| `check:secrets` | `bun run check:secrets` | Has caught a real defect. |
+| `check:routes` | `bun run check:routes` | Has caught a real defect. |
+| `check:shell` | `bun run check:shell` | Proven able to fail; has not yet caught anything. |
+| `check:panel` | `bun run check:panel` | Maturity not yet recorded — add a row here the first time it catches something. |
+| `check:spacing` | `bun run check:spacing` | Proven able to fail by its positive control, but it passes on a node build for the wrong reason: it skips the real-page check, because `output: 'server'` renders HTML on demand, so the unspaced `#byok` panel (`src/components/ByokSettings.astro`, stacked flush under `#quota`) is invisible to it. CI builds the static target and asserts there. Verified 2026-09-27: exit 0, three real-page checks skipped. |
+
+`verify:stt` is a procedure, not a passing test. It synthesises an enumerated-list
+passage and judges Smart against Verbatim by line structure, with `--mode
+verbatim` as the control. It has never been run, so nothing in the repo may claim
+the STT path is proven.

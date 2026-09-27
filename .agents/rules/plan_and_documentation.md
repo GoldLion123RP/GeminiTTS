@@ -186,6 +186,7 @@ Near the bottom of the document, provide a comprehensive Markdown task list refl
   - Type check: `npx astro check` (must report zero errors)
   - Preview smoke test: `bun run preview`, then load `/` and confirm the page renders styled.
   - End-to-end smoke tests and acceptance checks against the success criteria in Tier 1.
+  - **Standing gates.** `check:contrast`, `check:secrets`, `check:routes`, `check:shell`, `check:panel` and `check:spacing` must all appear in the phase's acceptance list and must be run, not asserted. `AGENTS.md` records which of them have caught a real defect and which skip part of their work on a node build; that paragraph is the authority, so read it rather than restating it from memory.
 - **Zero-Trust & Tooling (BLOCKING):** NEVER open, read, parse, or grep `.env`, `.env.local`, or any `*.env` file — use `.env.example` if present. Use `bun` / `bunx` exclusively; do not introduce npm, pnpm, or yarn. Never write outside the project drive: plans, audits, and evidence stay inside this repo per the Artifact Location & Storage Contract.
 
 ---

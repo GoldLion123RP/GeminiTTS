@@ -62,7 +62,7 @@ Before editing any code or executing any commands, the agent **MUST** ingest the
    - The **Finding Register** (all finding IDs referenced by the plan).
    - Mathematical formulas, tax tables, regulatory citations (IRS, OPM, BLS, CA DIR, DFAS).
    - **Critical Confirmations & "Do Not Fix" List** (prevent false-positive regressions).
-3. **Inspect the Evidence & Data Directory**: Review all datasets, mock tables, or test simulation scripts in `docs/<Topic>/data/` (e.g., `engine-simulation.mjs`, raw JSON/CSVs).
+3. **Inspect the Evidence & Data Directory**: Review all datasets, mock tables, or test simulation scripts in `docs/<topic-slug>/data/` (e.g., `engine-simulation.mjs`, raw JSON/CSVs).
 4. **Inspect Existing Regression Suites**: Check project verification scripts (e.g., `scripts/verify-*.mjs`, test runners) and baseline build status (`bun run build` here).
 5. **Declare Initial Target**: State explicitly in chat that ingestion is complete and declare the initial target phase (e.g., *"Ingestion complete. Beginning Phase 0: Ship-blocking defects."*).
 
@@ -78,7 +78,7 @@ Execution proceeds strictly in ascending hierarchical order (**Phase 0 → Phase
 
 ### Step 3: Verification & Acceptance Gate
 Once changes for the active phase are written, the agent must immediately test and verify:
-1. **Run the Narrowest Real Check**: Execute the exact verification script, test suite, or CLI assertion designated for that phase (e.g., `node docs/<Topic>/data/engine-simulation.mjs`, `node scripts/verify-hourly-salary-2026.mjs`).
+1. **Run the Narrowest Real Check**: Execute the exact verification script, test suite, or CLI assertion designated for that phase (e.g., `node docs/<topic-slug>/data/engine-simulation.mjs`, `node scripts/verify-hourly-salary-2026.mjs`).
 2. **Run Build Verification**: Run `npm run build` (or project equivalent) to ensure zero Astro/Vite/TypeScript compilation or bundle errors. In this repo, `npm` means `bun`: use `bun run build` and `bun run check`.
 3. **Check Live Acceptance Criteria**: Validate against every acceptance item explicitly written in that phase's spec.
 4. **Hard Invariant**: **No phase may complete with a red harness or failing build.** If verification fails, diagnose and remediate within the phase scope before moving on.
@@ -88,7 +88,7 @@ Once changes for the active phase are written, the agent must immediately test a
 ### Step 4: Documentation Synchronization & To-Do Checkoff
 Immediately after the phase's acceptance gate passes:
 1. **Update Checkboxes (`[x]`)**:
-   - Open `docs/<Topic>/implementation-plan.md`.
+   - Open `docs/<topic-slug>/plan.md`.
    - Update all completed action items from `- [ ]` to `- [x]`.
 2. **Update Phase Status & Timestamp**:
    - Update the status badge or header for that phase (e.g., `Status: Complete`, date/time of completion).
@@ -119,14 +119,16 @@ To maintain context hygiene, prevent token bloat, and avoid model hallucination 
 | **1. Isolate** | Lock in current hierarchical phase (e.g., Phase 0) | Zero work done on subsequent or guarded phases |
 | **2. Code** | Make surgical edits matching existing style and types | Strict TypeScript, zero lint errors, no unnecessary diffs |
 | **3. Verify** | Execute test harness + `npm run build` (`bun run build` here) | Exits 0, all acceptance assertions pass |
-| **4. Sync Docs**| Mark `- [x]` in `implementation-plan.md` & update phase status | Documentation matches code reality 1:1 |
+| **4. Sync Docs**| Mark `- [x]` in `docs/<topic-slug>/plan.md` & update phase status | Documentation matches code reality 1:1 |
 | **5. Compact**| Run `/compact` to reset context overhead | Clean session context ready for next phase |
 
 ---
 
 ## 5. Golden Rules & Prohibitions
-- ❌ **NEVER** edit source code without first reading both `implementation-plan.md` and `audit-report.md`.
+- ❌ **NEVER** edit source code without first reading both `docs/<topic-slug>/plan.md` and `docs/<topic-slug>/audit.md`.
+- ❌ **NEVER** create, move, or write a plan, audit, or evidence file into `docs/plans/`, `docs/superpowers/plans/`, `docs/archive/`, or loose in `docs/`.
+- ❌ **NEVER** write any artifact outside this repository working tree on the project drive (`E:`) — no other drive or partition, no user profile directory, no system temp directory.
 - ❌ **NEVER** skip verification gates to "save time". Every phase must be proven green.
-- ❌ **NEVER** leave `implementation-plan.md` checkboxes unchecked after completing a phase.
+- ❌ **NEVER** leave `docs/<topic-slug>/plan.md` checkboxes unchecked after completing a phase.
 - ❌ **NEVER** execute a phase that is explicitly blocked by a sequencing guard (e.g., Day 30 freeze).
 - ❌ **NEVER** proceed to the next phase without compacting the session when completing a major phase.

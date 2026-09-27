@@ -1,4 +1,4 @@
-Status: Review-Only | Doc-Type: Full
+Status: In Execution (Phase 0 complete) | Doc-Type: Full
 
 # Pages Deployment, BYOK Diagnostics, Light-Theme Borders & Panel Spacing — Implementation Plan
 
@@ -234,6 +234,75 @@ for a defect Phase 2 has not fixed yet.
 
 **Acceptance.** `bun run check:spacing` exits **1** on current `main`, with
 `byok` named as the unspaced sibling. This failure is the deliverable.
+
+**Result, 2026-09-27.** Met, and a second defect surfaced on the way.
+
+```
+$ $env:PAGES_TARGET = "pages"; bun run build     # BUILD_EXIT=0
+$ bun run check:spacing                           # EXIT=1
+pass  an unspaced #byok is caught: #byok sits directly below #quota with no top
+      margin and no gap on #main. …
+FAIL  text-to-speech: #byok sits directly below #quota with no top margin …
+FAIL  speech-to-text: #byok sits directly below #quota with no top margin …
+2 failure(s). Stacked panels are touching.
+```
+
+Two deviations from the plan as written, both deliberate:
+
+1. **The gate asserts a non-zero gap, not `mt-6`.** A stack passes if each
+   sibling after the first carries a positive `mt-*`/`my-*` **or** the parent
+   carries a positive `space-y-*`/`gap-*`. Both are correct ways to space a
+   column; pinning one class name would mean the first deliberate rhythm change
+   takes the gate down with a failure that says nothing about spacing. A gate
+   that gets edited to accommodate is a gate that stops being run. The second
+   positive control exists solely to prove that escape hatch is real.
+2. **The real-page check skips on a node build**, printing `skip` and the
+   reason. `output: 'server'` renders HTML on demand, so there is no `.html` on
+   disk to read. `check:panel` already takes exactly this position for its
+   watchdog assertion, and CI builds the static target, so the pages *are*
+   asserted — as the red run above proves. A silent skip is the one outcome this
+   repo's gates are not allowed to produce.
+
+**D12 — `check:panel`'s own positive control is red on `main`, and it is not
+this plan's to fix.** Discovered while wiring the gate in, and it blocks Phase 3's
+final acceptance (F.1), so it is recorded here rather than absorbed into Phase 0.
+
+```
+$ node <scripts/check-panel.mjs as committed at 0bdc1f8>
+pass  typing opens the gate (cost $0.0008)
+skip  watchdog not testable on a node build …
+pass  a restored textarea opens the gate (cost $0.0008)
+=== positive control ===
+FAIL  positive control MISSED — the gate opened on a panel with the reconciliation
+      removed. This check cannot fail, so it proves nothing.
+1 failure(s). The cost gate is not trustworthy.
+```
+
+Root cause, measured rather than guessed. The control strips
+`resyncEstimate` out of `src/components/TtsPanel.astro` with four `\n`-anchored
+regexes (`check-panel.mjs:288-292`). `core.autocrlf` is `true` in this
+repository, so the working tree is CRLF:
+
+```
+TtsPanel.astro  CRLF=750  bare-LF=0
+check-panel.mjs CRLF=367  bare-LF=0
+```
+
+`\n\t}\n` cannot match `\n\r\n\t}\r\n`, so three of the four replacements
+silently no-op. The only one that survives is the `paste` listener, whose
+pattern ends at a bare `\n` inside the line. Net effect: **one line removed out
+of the four the control depends on**, `resyncEstimate()` and its on-load call
+are still in the build, the gate opens anyway, and the gate reports the honest
+and correct verdict — it could not build a control that fails. The
+`stripped === original` guard does not catch it precisely *because* one
+replacement did match.
+
+The fix is to normalise line endings before stripping (or anchor the patterns
+on `\r?\n`) **and** to assert the control removed what it claims to, rather than
+only that it changed something. That is a change to `check-panel.mjs`'s control
+machinery, which Phase 0 was scoped not to touch, so it is queued as **0.6**
+pending approval rather than done here.
+
 
 ---
 
@@ -482,12 +551,14 @@ been run in this session.
 ## 4. Progress checklist
 
 ```markdown
-- [ ] **Phase 0: Add the gates (additive, no behaviour change)**
-  - [ ] 0.1: Write `scripts/check-spacing.mjs` with a positive control
-  - [ ] 0.2: Register `check:spacing` in `package.json`
-  - [ ] 0.3: Run it from `scripts/check-panel.mjs` and from `pages.yml`
-  - [ ] 0.4: Add the gate to `AGENTS.md` and `.agents/rules/plan_and_documentation.md`
-  - [ ] 0.5: Prove it RED on current `main` — `byok` named
+- [x] **Phase 0: Add the gates (additive, no behaviour change)** — Complete 2026-09-27
+  - [x] 0.1: Write `scripts/check-spacing.mjs` with a positive control
+  - [x] 0.2: Register `check:spacing` in `package.json`
+  - [x] 0.3: Run it from `scripts/check-panel.mjs` and from `pages.yml`
+  - [x] 0.4: Add the gate to `AGENTS.md`, `docs/development.md` and `.agents/rules/plan_and_documentation.md`
+  - [x] 0.5: Prove it RED on current `main` — `byok` named
+  - [ ] 0.6: **NEW — not in the plan as written.** Repair `check:panel`'s own positive
+        control, which is red on `main` and is a Phase 3 blocker. See `D12` below.
 - [ ] **Phase 1: Provider correctness (D1 D3 D5 D6 D7 D8)**
   - [ ] 1.1: `capability.ts` + test — build-target fact in one place
   - [ ] 1.2: Target-aware `readMode()` default + test
@@ -599,3 +670,4 @@ change. Two reversions need care:
 | Date | Change |
 | --- | --- |
 | 2026-09-27 | Plan drafted from four screenshot reports. Evidence collected into [plans/data/2026-09-27-defect-evidence.md](data/2026-09-27-defect-evidence.md): `.env` key confirmed valid via `/api/health`; Google CORS confirmed working from the Pages origin; Google confirmed to answer a bad key with `400 API_KEY_INVALID`; `check:contrast` confirmed light borders at 1.14:1 / 1.19:1. Status: Review-Only. |
+| 2026-09-27 | **Phase 0 complete.** `scripts/check-spacing.mjs` added with two positive controls (the defect, and the parent-side escape hatch); `check:spacing` registered in `package.json`; spawned from `check:panel`; added as a CI step in `pages.yml`; documented in `AGENTS.md`, `docs/development.md` and `.agents/rules/plan_and_documentation.md`. Proven RED on a static build with `byok` named on both tool pages. Green at the time of writing: `check:contrast`, `check:secrets`, `check:routes`, `check:shell`, `bun run check` (0 errors), `bun test` (285 pass), `bun run build` on both targets. **D12 recorded**: `check:panel`'s own positive control is red on `main` for a CRLF reason unrelated to this plan; queued as 0.6, blocking F.1. |

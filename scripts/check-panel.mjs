@@ -21,17 +21,22 @@
  *
  * WHAT IT CHECKS
  *
- * It runs the SHIPPED bundle from `dist/client/_astro/` against a small DOM
- * stub — the artifact the browser will actually download, not the source that
- * produced it — and asserts the gate opens in two scenarios:
+ * Two gates, because "the page works" covers more than one failure mode:
  *
- *   1. text is typed after load (the obvious path);
- *   2. text is ALREADY in the box when the module runs (the regression).
+ *   1. The SHIPPED bundle from `dist/client/_astro/` is run against a small DOM
+ *      stub — the artifact the browser will actually download, not the source
+ *      that produced it — and the cost gate must open in two scenarios:
+ *        a. text is typed after load (the obvious path);
+ *        b. text is ALREADY in the box when the module runs (the regression).
+ *        c. POSITIVE CONTROL: a bundle built from a panel with the
+ *           reconciliation removed must FAIL scenario b. A check that cannot
+ *           fail is not a check, and this one was written against a bug that
+ *           shipped, so it has to be shown failing at least once.
  *
- *   3. POSITIVE CONTROL: a bundle built from a panel with the reconciliation
- *      removed must FAIL scenario 2. A check that cannot fail is not a check,
- *      and this one was written against a bug that shipped, so it has to be
- *      shown failing at least once.
+ *   2. `check:spacing.mjs`, spawned below: every declared stack of sibling
+ *      panels carries a non-zero vertical gap. Read-only against the built
+ *      HTML, and carrying its own positive control.
+ *
  *
  * Usage: `bun run check:panel` (run after `bun run build`).
  */
@@ -221,6 +226,32 @@ function run(harness, chunkPath, preload, noModule = false) {
 
 const dir = mkdtempSync(join(tmpdir(), 'geminitts-panel-gate-'));
 
+/**
+ * The layout gate, run from here so one command covers "does the page work".
+ *
+ * `check-spacing.mjs` is a separate script with its own `package.json` entry and
+ * its own controls; it is only *invoked* from here so that `bun run check:panel`
+ * does not report green on a page whose panels are welded together. It is
+ * spawned, not imported, for the same reason this file spawns its harness: its
+ * exit code is the contract, and a child process cannot leak a partial state
+ * into the DOM harness below.
+ *
+ * Read-only, so running it first is safe: the positive control further down
+ * rebuilds the project, and anything asserted against the artifact has to
+ * happen before that.
+ */
+console.log('=== vertical rhythm (check:spacing) ===');
+const spacing = spawnSync(process.execPath, [join(ROOT, 'scripts', 'check-spacing.mjs')], {
+  cwd: ROOT,
+  encoding: 'utf8',
+});
+process.stdout.write(spacing.stdout ?? '');
+if (spacing.status !== 0) {
+  process.stderr.write(spacing.stderr ?? '');
+  fail('`check:spacing` failed — the stacked panels on a tool page are touching. See the output above.');
+}
+console.log('');
+
 try {
 	const chunk = findPanelChunk();
 	if (chunk) {
@@ -283,22 +314,53 @@ try {
 		// restored in `finally` and the real build is re-run afterwards; a check
 		// that leaves the repo in a modified state, or whose artifact no longer
 		// matches the source, is worse than no check.
+		//
+		// D12. The four removals are `\n`-anchored, and this repository is
+		// checked out CRLF (`core.autocrlf` is true), so against the raw file
+		// `\n\t}\n` cannot match `\n\r\n\t}\r\n`. Three of the four silently
+		// removed nothing, the control still called `resyncEstimate()` on load,
+		// the gate opened, and this check reported the honest and useless
+		// "positive control MISSED". The `stripped === original` guard did not
+		// catch it, because the ONE removal that used a bare `\n` inside its
+		// line did match — so the file differed while the control was still the
+		// post-fix shape. Hence two changes, and both are load-bearing:
+		//
+		//   1. strip in a normalised LF copy, and write the control back with the
+		//      file's own line endings, so the round trip is byte-identical;
+		//   2. assert that EVERY removal removed something, by label — not merely
+		//      that the file changed. A partial control is a control that tests
+		//      nothing while looking like it tested something.
 		const panelPath = join(ROOT, 'src', 'components', 'TtsPanel.astro');
-		const original = readFileSync(panelPath, 'utf8');
-		const stripped = original
-			.replace(/function resyncEstimate\(\)[\s\S]*?\n\t}\n/, '')
-			.replace(/textarea\.addEventListener\('paste'[\s\S]*?\n/, '')
-			.replace(/textarea\.addEventListener\('change', resyncEstimate\);\n/, '')
-			.replace(/\n\t\/\/ The restore case above[\s\S]*?\n\tresyncEstimate\(\);\n/, '\n');
+		const onDisk = readFileSync(panelPath, 'utf8');
+		const eol = onDisk.includes('\r\n') ? '\r\n' : '\n';
+		const original = onDisk.replace(/\r\n/g, '\n');
 
-		if (stripped === original) {
+		/** [label, pattern, replacement] — labelled so a miss names itself. */
+		const REMOVALS = [
+			['the resyncEstimate function', /function resyncEstimate\(\)[\s\S]*?\n\t}\n/, ''],
+			['the paste listener', /textarea\.addEventListener\('paste'[\s\S]*?\n/, ''],
+			['the change listener', /textarea\.addEventListener\('change', resyncEstimate\);\n/, ''],
+			['the on-load resyncEstimate() call', /\n\t\/\/ The restore case above[\s\S]*?\n\tresyncEstimate\(\);\n/, '\n'],
+		];
+
+		/** @type {string[]} */
+		const missed = [];
+		let stripped = original;
+		for (const [label, pattern, replacement] of REMOVALS) {
+			const next = stripped.replace(pattern, replacement);
+			if (next === stripped) missed.push(label);
+			stripped = next;
+		}
+
+		if (missed.length > 0) {
 			fail(
-				'positive control could not be built — the reconciliation code was not found in ' +
-					'TtsPanel.astro. If it was renamed, update this check.',
+				`positive control could not be built — these removals found nothing in ` +
+					`TtsPanel.astro: ${missed.join('; ')}. A partial control is not a control: ` +
+					'if the panel was renamed or reformatted, update the patterns here.',
 			);
 		} else {
 			try {
-				writeFileSync(panelPath, stripped);
+				writeFileSync(panelPath, stripped.replace(/\n/g, eol));
 				const controlBuild = spawnSync('bun', ['run', 'build'], { cwd: ROOT, encoding: 'utf8' });
 				const controlChunk = controlBuild.status === 0 ? findPanelChunk() : null;
 				if (!controlChunk) {
@@ -317,7 +379,11 @@ try {
 					}
 				}
 			} finally {
-				writeFileSync(panelPath, original);
+				// `onDisk`, not `original`: this file is checked out CRLF, and
+				// restoring the LF-normalised copy would silently rewrite all 750
+				// line endings — a working-tree mutation this check makes on
+				// every run, in a file it does not own.
+				writeFileSync(panelPath, onDisk);
 				// Rebuild so `dist/` matches the real source again. A gate that
 				// leaves a stale artifact behind would poison the next check: it
 				// would test the control instead of the code.
