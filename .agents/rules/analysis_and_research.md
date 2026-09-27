@@ -34,10 +34,12 @@ docs/<topic-slug>/data/       created ONLY if material was pulled from the web
   comment on the next line, or `bun run docs:sync` fails.
 - Report the created paths in your reply so the user can open them directly.
 
-**Forbidden locations.** `docs/plans/` and `docs/superpowers/plans/` are legacy:
-never add a new plan or audit there. Never write a plan or audit loose in
-`docs/`, into `docs/archive/`, into `.agents/`, `src/`, or the project root, and
-never use a dated flat filename such as `docs/2026-09-27-thing-plan.md`.
+**Forbidden locations.** `docs/plans/` is legacy: never add a new plan or
+audit there. Never write a plan or audit loose in `docs/`, into `docs/archive/`,
+into `.agents/`, `src/`, or the project root, and never use a dated flat filename
+such as `docs/2026-09-27-thing-plan.md`. `docs/superpowers/` was retired on
+2026-09-27 and its contents archived — do not recreate it; the vendored
+`brainstorming` skill's spec path loses to this contract.
 
 **Drive boundary (BLOCKING).** Every file you create or modify stays inside this
 repository working tree on the project drive (`E:`). Never write to another

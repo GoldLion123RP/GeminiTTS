@@ -54,7 +54,7 @@ async function render(dir, indexPath) {
 		const markdown = await readFile(file, "utf8");
 		const title = firstHeading(markdown);
 		if (!title) continue;
-		const href = relative(join(ROOT, "docs"), file).split(sep).join("/");
+		const href = relative(dir, file).split(sep).join("/");
 		const desc = description(markdown);
 		if (desc === null) {
 			throw new Error(

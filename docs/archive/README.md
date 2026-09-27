@@ -34,6 +34,9 @@ belongs in [`docs/`](../README.md).
 
 <!-- sync:start -->
 
-_No documents yet._
+| Document | Description |
+| :--- | :--- |
+| [GeminiTTS — Design Spec (archived 2026-09-27)](2026-09-26-gemini-tts-design-spec.md) | Architectural design spec for the single-page Gemini-backed TTS app. Approved 2026-09-26. Archived 2026-09-27: implemented by the GeminiTTS implementation plan; the single-page layout it describes was later split into three pages. |
+| [GeminiTTS — Implementation Plan (archived 2026-09-27)](2026-09-26-gemini-tts-implementation-plan.md) | Four-tier phased implementation plan derived from the design spec. Phases 0–7 executed; 7.5 calibration and 7.7 audit complete. Archived 2026-09-27: all phases shipped and verified, nothing replaced it; superseded in scope by the shell/theme/BYOK and Pages-defect plans in docs/plans/. |
 
 <!-- sync:end -->

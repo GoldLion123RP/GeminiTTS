@@ -632,7 +632,8 @@ this phase is not precedent for it, and the DESIGN.md bullet says so.
 `README.md:269` and `DESIGN.md:243` both stated `#ebebeb` in prose. A design-system
 edit that leaves user-facing docs quoting the old value is a broken change no
 matter how correct the CSS is, and `AGENTS.md` requires the docs move in the same
-turn. Both corrected. The `docs/superpowers/` spec and the Phase 2.1 plan code
+turn. Both corrected. The archived design spec in `docs/archive/` and the Phase 2.1 plan code
+
 block were left alone deliberately: they are historical records of the
 pre-Phase-2 state, and the evidence file at `D9` depends on `#ebebeb` still being
 what it measured.

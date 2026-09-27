@@ -21,8 +21,8 @@ every older convention, including `docs/plans/`.
 - `<topic-slug>`: 2–4 lowercase kebab-case words naming the topic, no date
   prefix, no `-plan` / `-report` suffix. Examples: `byok-diagnostics`,
   `light-theme-contrast`, `app-shell-a11y`.
-- Never write a plan or audit into `docs/plans/`, `docs/superpowers/plans/`,
-  `docs/archive/`, loose in `docs/`, into `.agents/`, `src/`, the project root,
+- Never write a plan or audit into `docs/plans/`, `docs/superpowers/` (retired
+  2026-09-27), `docs/archive/`, loose in `docs/`, into `.agents/`, `src/`, the project root,
   or under a dated flat filename.
 - Every plan and audit opens with `# ` H1 + a `<!-- desc: ... -->` marker on the
   next line, or `bun run docs:sync` fails.
@@ -126,7 +126,7 @@ To maintain context hygiene, prevent token bloat, and avoid model hallucination 
 
 ## 5. Golden Rules & Prohibitions
 - ❌ **NEVER** edit source code without first reading both `docs/<topic-slug>/plan.md` and `docs/<topic-slug>/audit.md`.
-- ❌ **NEVER** create, move, or write a plan, audit, or evidence file into `docs/plans/`, `docs/superpowers/plans/`, `docs/archive/`, or loose in `docs/`.
+- ❌ **NEVER** create, move, or write a plan, audit, or evidence file into `docs/plans/`, `docs/superpowers/` (retired 2026-09-27), `docs/archive/`, or loose in `docs/`.
 - ❌ **NEVER** write any artifact outside this repository working tree on the project drive (`E:`) — no other drive or partition, no user profile directory, no system temp directory.
 - ❌ **NEVER** skip verification gates to "save time". Every phase must be proven green.
 - ❌ **NEVER** leave `docs/<topic-slug>/plan.md` checkboxes unchecked after completing a phase.

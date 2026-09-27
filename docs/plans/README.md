@@ -18,8 +18,8 @@ phases in the same turn it was written unless explicitly told to.
 
 | Document | Description |
 | :--- | :--- |
-| [App Shell, Theme, Multi-Page Split & Browser-Direct BYOK — Implementation Plan](plans/2026-09-26-shell-theme-multipage-byok-plan.md) | Four-tier plan for the app shell (header/footer), the tri-state theme, the three-page split, and a browser-direct BYOK mode. |
-| [Pages Deployment, BYOK Diagnostics, Light-Theme Borders & Panel Spacing — Implementation Plan](plans/2026-09-27-pages-byok-theme-spacing-defects-plan.md) | Four-tier plan for the four defects reported 2026-09-27: the static GitHub Pages deployment cannot serve the .env key, BYOK reports failures under the wrong cause, light-mode borders sit at 1.14:1, and ByokSettings has no top margin. |
-| [Defect Evidence — Pages deployment, BYOK, light-theme borders, panel spacing](plans/data/2026-09-27-defect-evidence.md) | Probe output, contrast arithmetic, and source locations for the four defects reported 2026-09-27 from screenshots of goldlion123rp.github.io/GeminiTTS. Every row names the command that produced it. |
+| [App Shell, Theme, Multi-Page Split & Browser-Direct BYOK — Implementation Plan](2026-09-26-shell-theme-multipage-byok-plan.md) | Four-tier plan for the app shell (header/footer), the tri-state theme, the three-page split, and a browser-direct BYOK mode. |
+| [Pages Deployment, BYOK Diagnostics, Light-Theme Borders & Panel Spacing — Implementation Plan](2026-09-27-pages-byok-theme-spacing-defects-plan.md) | Four-tier plan for the four defects reported 2026-09-27: the static GitHub Pages deployment cannot serve the .env key, BYOK reports failures under the wrong cause, light-mode borders sit at 1.14:1, and ByokSettings has no top margin. |
+| [Defect Evidence — Pages deployment, BYOK, light-theme borders, panel spacing](data/2026-09-27-defect-evidence.md) | Probe output, contrast arithmetic, and source locations for the four defects reported 2026-09-27 from screenshots of goldlion123rp.github.io/GeminiTTS. Every row names the command that produced it. |
 
 <!-- sync:end -->

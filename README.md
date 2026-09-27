@@ -27,8 +27,8 @@ An Astro + Tailwind CSS v4 front end for GeminiTTS, built on the Geist design sy
 > transcript and PDF/DOCX upload need the node build, which Pages cannot run;
 > see [the Pages demo](#the-pages-demo-static-and-the-node-app-the-product).
 >
-> The approved design spec and the phased build plan, with a live progress
-> checklist, are tracked in `docs/superpowers/`.
+> The approved design spec and the phased build plan are archived in
+> `docs/archive/`, with every phase shipped and verified.
 
 
 ---
@@ -142,7 +142,7 @@ the static target — the node build is gated by hand.
 │   ├── styles/
 │   │   └── global.css          # Tailwind entry point — @import 'tailwindcss'
 │   └── env.d.ts                # typed GEMINI_API_KEY declaration
-├── docs/superpowers/           # design spec + implementation plan
+├── docs/archive/               # shipped design spec + implementation plan
 ├── .agents/
 │   ├── rules/                  # research + planning rules, auto-loaded
 │   └── skills/                 # agent skills, auto-discovered
