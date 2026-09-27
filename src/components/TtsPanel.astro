@@ -216,6 +216,14 @@ const ACCEPT = '.txt,.md,.pdf,.docx';
 
 	const DEBOUNCE_MS = 300;
 
+	/**
+	 * How often the value watcher looks when it is running. 250 ms is under
+	 * the 300 ms debounce, so a restored value is noticed and quoted before a
+	 * user who is already reaching for the button could conclude the gate is
+	 * broken. The cost when idle is one string comparison.
+	 */
+	const VALUE_WATCH_MS = 250;
+
 	const textarea = document.getElementById('tts-text') as HTMLTextAreaElement;
 	const fileInput = document.getElementById('tts-file') as HTMLInputElement;
 	const languageSelect = document.getElementById('tts-language') as HTMLSelectElement;
@@ -252,6 +260,10 @@ const ACCEPT = '.txt,.md,.pdf,.docx';
 	/** Aborts in-flight estimate and synthesis requests. */
 	let activeController: AbortController | null = null;
 	let debounceTimer: number | undefined;
+	/** The value the watcher last acted on. `null` until it has looked once. */
+	let lastWatched: string | null = null;
+	/** The value watcher's interval, or `undefined` while it is stopped. */
+	let watchTimer: number | undefined;
 	/** The exact text the visible estimate describes. Null until one lands. */
 	let estimatedFor: string | null = null;
 	let retryAction: (() => void) | null = null;
@@ -447,14 +459,82 @@ const ACCEPT = '.txt,.md,.pdf,.docx';
 		scheduleEstimate();
 	}
 
+	/**
+	 * THE ONE THAT STILL GOT THROUGH: events are not a guarantee.
+	 *
+	 * A report on 2026-09-27 was a screenshot of the deployed Pages build with
+	 * text in the box, a live key accepted, and Generate permanently disabled
+	 * reading "an estimate must load before generating". Nothing had thrown: the
+	 * panel's watchdog was silent, which is its way of saying the module ran
+	 * and attached. So the estimate was never *requested*, and the only way
+	 * that happens with the reconciliation in place is that the value arrived
+	 * after every one-shot check had already run and dispatched no event.
+	 *
+	 * That is not hypothetical. Chrome restores form field values from its
+	 * session store on history navigation and on reload, and the restore is
+	 * not ordered against a bundled module script: the script can win the race
+	 * and see an empty box, and the restore can then land with no `input` and
+	 * no `change`. Android's GBoard is the same story by another route — an
+	 * autofill or clipboard-suggestion insert is not obliged to fire either.
+	 *
+	 * Every fix above was an *event* or a *moment*. This one is neither: it
+	 * watches the value, so it does not care how the text got there. Two
+	 * properties keep it cheap and safe:
+	 *
+	 *   1. it acts only on a **change** of the observed value, so an estimate
+	 *      that failed is not retried on a timer — a broken quote would
+	 *      otherwise re-quote forever, four times a second, forever;
+	 *   2. it re-evaluates the gate as well as the quote, because the failure
+	 *      runs in BOTH directions and only one of them is loud. A value that
+	 *      changes with no event while an estimate is on screen leaves a
+	 *      *stale price* next to an *enabled* button — the one shape that
+	 *      spends money on text nobody quoted. `updateGate` compares the exact
+	 *      string, so calling it here closes that door in the same tick.
+	 *
+	 * What remains is one string comparison every `VALUE_WATCH_MS` for the life
+	 * of the page, which is the cheapest insurance in this file: the gate is
+	 * the only thing standing between a mistyped intention and a paid request,
+	 * and every alternative to watching costs a round trip or a user gesture.
+	 */
+	function startValueWatch(): void {
+		if (watchTimer !== undefined) return;
+		lastWatched = textarea.value;
+		watchTimer = window.setInterval(() => {
+			const value = textarea.value;
+			if (value === lastWatched) return;
+			lastWatched = value;
+			resyncEstimate();
+			updateGate();
+		}, VALUE_WATCH_MS);
+	}
+
+	function stopValueWatch(): void {
+		if (watchTimer === undefined) return;
+		window.clearInterval(watchTimer);
+		watchTimer = undefined;
+	}
+
 	// `paste` fires *before* the value is committed, so the read has to wait a
 	// tick. Scheduling on the event alone would compare the pre-paste value and
 	// decide there was nothing to do.
 	textarea.addEventListener('paste', () => window.setTimeout(resyncEstimate, 0));
 	textarea.addEventListener('change', resyncEstimate);
 
+	// History navigation restores a textarea without an `input` event, and it
+	// is the one restore path that always reports itself — `pageshow` with
+	// `persisted` true is the bfcache handshake. Cheap, and it answers
+	// immediately instead of at the next tick of the watcher.
+	window.addEventListener('pageshow', () => {
+		resyncEstimate();
+		updateGate();
+		startValueWatch();
+	});
+
 	// The restore case above: this runs on every load, not only after an edit.
 	resyncEstimate();
+
+	// ...and this is the one that does not care when the restore happened.
+	startValueWatch();
 
 	// Tells the watchdog below that the module executed and attached. Set last,
 	// so a throw anywhere above leaves the watchdog armed.
@@ -684,8 +764,13 @@ const ACCEPT = '.txt,.md,.pdf,.docx';
 	alertRetry.addEventListener('click', () => retryAction?.());
 
 	// Revoking on unload stops a long-lived tab holding the whole WAV in
-	// memory. revoking on replace happens in clearResult().
-	window.addEventListener('pagehide', clearResult);
+	// memory. revoking on replace happens in clearResult(). A page on its way
+	// into the bfcache takes no timers with it; `pageshow` starts the watcher
+	// again, so the two are a pair rather than two independent decisions.
+	window.addEventListener('pagehide', () => {
+		clearResult();
+		stopValueWatch();
+	});
 
 	updateGate();
 </script>

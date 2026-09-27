@@ -81,6 +81,13 @@ import { join } from 'node:path';
 
 const BUNDLE = process.env.BUNDLE_PATH;
 const PRELOAD = process.env.PRELOAD === '1';
+// LATE is the case a screenshot proved on 2026-09-27: the value appears after
+// the module has executed and NO event is dispatched. Chrome restores form
+// fields from its session store on history navigation and on reload, and that
+// restore is not ordered against a bundled module script — so the panel can run
+// every one-shot reconciliation against an empty box and then be handed text
+// with nothing to tell it so.
+const LATE = process.env.LATE === '1';
 const TEXT = 'আমাদের গ্লাসের বাড়িতে ছোট মামার বিশেষ সিদ্ধান্ত নিয়েছিলাম।';
 
 class ClassList {
@@ -130,6 +137,12 @@ globalThis.window = {
 	addEventListener() {},
 	setTimeout: (fn, ms) => setTimeout(fn, ms),
 	clearTimeout: (t) => clearTimeout(t),
+	// The value watcher is an interval, not a timeout. Without these the panel
+	// throws on the first tick and every assertion below would be reading a
+	// dead module — which is precisely the failure this harness exists to
+	// detect, so it must not be the harness's own.
+	setInterval: (fn, ms) => setInterval(fn, ms),
+	clearInterval: (t) => clearInterval(t),
 };
 globalThis.localStorage = new El('local');
 globalThis.sessionStorage = new El('session');
@@ -158,9 +171,15 @@ if (process.env.NO_MODULE !== '1') await import(BUNDLE);
 // the registry yet, and the stub creates on demand.
 const textarea = document.getElementById('tts-text');
 if (!PRELOAD) {
+	// LATE assigns the value with no event at all. Every other mode dispatches
+	// an input event, so it proves the ordinary path; this one proves there is
+	// still a path when the browser tells us nothing.
 	textarea.value = TEXT;
-	for (const fn of textarea.listeners.input ?? []) fn();
+	if (!LATE) for (const fn of textarea.listeners.input ?? []) fn();
 }
+// The watcher runs at 250 ms and the debounce at 300 ms, so 600 ms covers the
+// worst case (first watcher tick at 250 ms, then the debounce it schedules) with
+// room to spare.
 await new Promise((r) => setTimeout(r, 600));
 
 // The watchdog is a CLASSIC inline script in the page, not part of the module,
@@ -200,7 +219,7 @@ console.log(JSON.stringify({
 	return path;
 }
 
-function run(harness, chunkPath, preload, noModule = false) {
+function run(harness, chunkPath, preload, noModule = false, late = false) {
 	const result = spawnSync(process.execPath, [harness], {
 		cwd: ROOT,
 		encoding: 'utf8',
@@ -210,6 +229,7 @@ function run(harness, chunkPath, preload, noModule = false) {
 			PAGE_HTML: join(ROOT, 'dist', 'client', 'text-to-speech'),
 			NO_MODULE: noModule ? '1' : '0',
 			PRELOAD: preload ? '1' : '0',
+			LATE: late ? '1' : '0',
 		},
 	});
 	if (result.status !== 0) {
@@ -308,6 +328,27 @@ try {
 			}
 		}
 
+		// The regression a screenshot proved on 2026-09-27, and the reason the
+		// PRELOAD case above is not sufficient: PRELOAD puts the text in the box
+		// BEFORE the module runs, so the on-load reconciliation sees it. A real
+		// Chrome restores a form field on history navigation *after* the module
+		// has run and dispatches nothing at all. The only difference between
+		// this and the ordinary case is one absent event, which is why it needs
+		// its own run: everything else about the page is identical.
+		const late = run(harness, chunk, false, false, true);
+		if (late) {
+			if (late.disabled) {
+				fail(
+					`Generate is disabled when text appears with NO event dispatched. This is the ` +
+						`2026-09-27 report: a key accepted, text in the box, and a dead button reading ` +
+						`"an estimate must load" with nothing to act on. The value watcher must notice ` +
+						`a value it was not told about. Note reads: ${late.note}`,
+				);
+			} else {
+				pass(`text that arrives with no event still opens the gate (cost ${late.cost})`);
+			}
+		}
+
 		console.log('\n=== positive control ===');
 		// The control is a REAL build of a panel with the reconciliation removed
 		// — the pre-fix shape. It mutates the working tree, so the original is
@@ -341,6 +382,13 @@ try {
 			['the paste listener', /textarea\.addEventListener\('paste'[\s\S]*?\n/, ''],
 			['the change listener', /textarea\.addEventListener\('change', resyncEstimate\);\n/, ''],
 			['the on-load resyncEstimate() call', /\n\t\/\/ The restore case above[\s\S]*?\n\tresyncEstimate\(\);\n/, '\n'],
+			// Added 2026-09-27 with the watcher. A control that leaves the newest
+			// reconciliation in place is not the pre-fix shape any more: the gate
+			// would open through it and the control would report "MISSED" while
+			// testing nothing. The labelled-miss assertion below is what keeps
+			// this list honest as the panel changes shape.
+			['the value watcher', /function startValueWatch\(\)[\s\S]*?\n\t}\n/, ''],
+			['the on-load startValueWatch() call', /\n\t\/\/ \.\.\.and this is the one that does not care[\s\S]*?\n\tstartValueWatch\(\);\n/, '\n'],
 		];
 
 		/** @type {string[]} */
