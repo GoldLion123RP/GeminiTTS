@@ -6,6 +6,48 @@ Project memory is `AGENTS.md` in the repository root. Treat it as the authority 
 
 ---
 
+## 0. Artifact Location & Storage Contract (BLOCKING — read before writing any file)
+
+This contract overrides every older convention, including `docs/plans/`.
+
+**Layout — one topic, one new folder, directly under `docs/`.** When the user
+asks for an implementation plan and an audit report, write them to disk in a
+topic folder you create for that request:
+
+```
+docs/<topic-slug>/plan.md     the implementation plan
+docs/<topic-slug>/audit.md    the audit / analysis report
+docs/<topic-slug>/data/       created ONLY if material was pulled from the web
+```
+
+- `<topic-slug>` is 2–4 lowercase kebab-case words naming the topic — e.g.
+  `byok-diagnostics`, `light-theme-contrast`, `app-shell-a11y`. No date prefix,
+  no `-plan` / `-report` suffix, no restating of the file names.
+- File names are exactly `plan.md` and `audit.md`. The folder carries the topic,
+  so the file names stay short and the pair is impossible to confuse.
+- `data/` holds **only** what came from outside the repo: fetched pages, API
+  responses, raw JSON/CSV, transcripts, screenshots. Create it on the first web
+  fetch, name each file after its source, and cite it from the plan and the
+  audit so every web-sourced claim is traceable. If nothing came from the web,
+  do not create `data/`.
+- Each document opens with a single `# ` H1 and a `<!-- desc: one-line summary -->`
+  comment on the next line, or `bun run docs:sync` fails.
+- Report the created paths in your reply so the user can open them directly.
+
+**Forbidden locations.** `docs/plans/` and `docs/superpowers/plans/` are legacy:
+never add a new plan or audit there. Never write a plan or audit loose in
+`docs/`, into `docs/archive/`, into `.agents/`, `src/`, or the project root, and
+never use a dated flat filename such as `docs/2026-09-27-thing-plan.md`.
+
+**Drive boundary (BLOCKING).** Every file you create or modify stays inside this
+repository working tree on the project drive (`E:`). Never write to another
+drive or partition, a user profile directory, or the system temp directory. A
+temp path offered by tooling is for transient process output only; anything worth
+keeping is moved into the repo before the turn ends. Scratch work goes to
+`docs/.scratch/` — see `docs/agent-workflow.md`.
+
+---
+
 ## 1. Activation Triggers (MUST)
 
 Fire Deep Mode (Passes 1–3 in §3 + Self-Review in §4) when user intent matches ANY:
@@ -39,6 +81,12 @@ Whenever Deep Mode or Fast-Path fires:
 3. Current repo ground truth via `read` / `grep` / `glob`, plus the versions and commands recorded in `AGENTS.md` and `DESIGN.md` (configs, lockfiles).
 
 Record versions + fetch dates for every touchpoint. If a tool is unavailable, declare `STALE — memory only` and downgrade confidence per §4. NEVER answer dynamic-version questions from memory alone.
+
+**Evidence persistence (BLOCKING):** anything pulled from the web during this
+pass is an external artifact — save it under `docs/<topic-slug>/data/` and cite
+the file from the plan and the audit. A `VERIFIED` claim whose raw evidence is
+quoted in chat but never written down is not traceable, and the next agent
+cannot re-check it.
 
 ### Pass 2 — Validate: first-principles teardown + pre-mortem
 
@@ -74,6 +122,7 @@ Ask verbatim, in order:
 - Reference real, verifiable data points, versions, and metrics. NEVER invent URLs, versions, limits, API fields, or pricing.
 - **Zero-Trust Secret Protection:** NEVER open, read, parse, or grep `.env`, `.env.local`, or any `*.env` file. Use `.env.example` templates if present. Never inline secrets into client-side code.
 - **Tooling:** use `bun` / `bunx` for installs and scripts, per `AGENTS.md`. Do not introduce a second package manager.
+- **Storage:** every artifact lands inside this repo on the project drive, per §0. Never write to another drive, a user profile directory, or the system temp directory.
 
 ---
 
@@ -106,3 +155,8 @@ Every Deep Mode response MUST contain, in order:
 8. Handoff (phased next steps or pointer to 4-tier plan doc per [[.agents/rules/plan_and_documentation.md]])
 
 Fast-Path answers include items 1–2 + one-line why full passes were skipped, plus confidence.
+
+When the handoff becomes a plan and audit on disk, create the topic folder per
+§0 and state the exact paths — `docs/<topic-slug>/plan.md`,
+`docs/<topic-slug>/audit.md`, plus `docs/<topic-slug>/data/` if any web material
+was captured.

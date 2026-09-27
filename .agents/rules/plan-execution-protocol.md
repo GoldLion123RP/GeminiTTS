@@ -1,7 +1,38 @@
 # Implementation Plan Execution & Phase Gate Protocol
 
 ## 1. Overview & Core Objective
-This protocol governs the autonomous and paired execution of approved **Implementation Plans** (whether located in `docs/<Topic>/implementation-plan.md` or drafted inline). It establishes a deterministic, phase-by-phase execution cadence with mandatory knowledge ingestion, acceptance verification, document synchronization, and context compaction (`/compact`) between phases.
+This protocol governs the autonomous and paired execution of approved **Implementation Plans** (stored as `docs/<topic-slug>/plan.md`, with the companion `docs/<topic-slug>/audit.md` and evidence in `docs/<topic-slug>/data/`, or drafted inline when the user asked for chat-only). It establishes a deterministic, phase-by-phase execution cadence with mandatory knowledge ingestion, acceptance verification, document synchronization, and context compaction (`/compact`) between phases.
+
+---
+
+## 1A. Artifact Location & Storage Contract (BLOCKING)
+
+Canonical definition lives in
+[`.agents/rules/plan_and_documentation.md`](plan_and_documentation.md) and is
+repeated here because this protocol is often loaded on its own. It overrides
+every older convention, including `docs/plans/`.
+
+| Artifact | Path |
+| :--- | :--- |
+| Implementation plan | `docs/<topic-slug>/plan.md` |
+| Audit / analysis report | `docs/<topic-slug>/audit.md` |
+| Web-fetched evidence | `docs/<topic-slug>/data/` — created only on the first web fetch |
+
+- `<topic-slug>`: 2–4 lowercase kebab-case words naming the topic, no date
+  prefix, no `-plan` / `-report` suffix. Examples: `byok-diagnostics`,
+  `light-theme-contrast`, `app-shell-a11y`.
+- Never write a plan or audit into `docs/plans/`, `docs/superpowers/plans/`,
+  `docs/archive/`, loose in `docs/`, into `.agents/`, `src/`, the project root,
+  or under a dated flat filename.
+- Every plan and audit opens with `# ` H1 + a `<!-- desc: ... -->` marker on the
+  next line, or `bun run docs:sync` fails.
+- **Drive boundary (BLOCKING):** plan, audit, and evidence stay inside this
+  repository working tree on the project drive (`E:`). Never write to another
+  drive or partition, a user profile directory, or the system temp directory;
+  move anything worth keeping into the repo before the turn ends. Scratch work
+  belongs in `docs/.scratch/`.
+- Do not create or move topic folders while executing a plan. The folder is
+  created once, when the plan is written.
 
 ---
 
@@ -26,8 +57,8 @@ graph TD
 
 ### Step 1: Complete Ingestion & Grounding (Pre-Execution Gate)
 Before editing any code or executing any commands, the agent **MUST** ingest the full context of the project topic:
-1. **Read the Implementation Plan**: Read `docs/<Topic>/implementation-plan.md` from top to bottom. Understand the sequence, dependency order, risks, and phase gates.
-2. **Read the Companion Audit/Analysis Report**: Read `docs/<Topic>/audit-report.md` (or `analysis-report.md`). Pay critical attention to:
+1. **Read the Implementation Plan**: Read `docs/<topic-slug>/plan.md` from top to bottom. Understand the sequence, dependency order, risks, and phase gates.
+2. **Read the Companion Audit/Analysis Report**: Read `docs/<topic-slug>/audit.md`. Pay critical attention to:
    - The **Finding Register** (all finding IDs referenced by the plan).
    - Mathematical formulas, tax tables, regulatory citations (IRS, OPM, BLS, CA DIR, DFAS).
    - **Critical Confirmations & "Do Not Fix" List** (prevent false-positive regressions).

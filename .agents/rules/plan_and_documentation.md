@@ -6,6 +6,48 @@ Project memory is `AGENTS.md` in the repository root — the authority on stack,
 
 ---
 
+## Artifact Location & Storage Contract (BLOCKING — read before writing any file)
+
+This contract overrides every older convention, including `docs/plans/`.
+
+**Layout — one topic, one new folder, directly under `docs/`.** When the user
+asks for an implementation plan and an audit report, write them to disk in a
+topic folder you create for that request:
+
+```
+docs/<topic-slug>/plan.md     the implementation plan
+docs/<topic-slug>/audit.md    the audit / analysis report
+docs/<topic-slug>/data/       created ONLY if material was pulled from the web
+```
+
+- `<topic-slug>` is 2–4 lowercase kebab-case words naming the topic — e.g.
+  `byok-diagnostics`, `light-theme-contrast`, `app-shell-a11y`. No date prefix,
+  no `-plan` / `-report` suffix, no restating of the file names.
+- File names are exactly `plan.md` and `audit.md`. The folder carries the topic,
+  so the file names stay short and the pair is impossible to confuse.
+- `data/` holds **only** what came from outside the repo: fetched pages, API
+  responses, raw JSON/CSV, transcripts, screenshots. Create it on the first web
+  fetch, name each file after its source, and cite it from the plan and the
+  audit so every web-sourced claim is traceable. If nothing came from the web,
+  do not create `data/`.
+- Each document opens with a single `# ` H1 and a `<!-- desc: one-line summary -->`
+  comment on the next line, or `bun run docs:sync` fails.
+- Report the created paths in your reply so the user can open them directly.
+
+**Forbidden locations.** `docs/plans/` and `docs/superpowers/plans/` are legacy:
+never add a new plan or audit there. Never write a plan or audit loose in
+`docs/`, into `docs/archive/`, into `.agents/`, `src/`, or the project root, and
+never use a dated flat filename such as `docs/2026-09-27-thing-plan.md`.
+
+**Drive boundary (BLOCKING).** Every file you create or modify stays inside this
+repository working tree on the project drive (`E:`). Never write to another
+drive or partition, a user profile directory, or the system temp directory. A
+temp path offered by tooling is for transient process output only; anything worth
+keeping is moved into the repo before the turn ends. Scratch work goes to
+`docs/.scratch/` — see `docs/agent-workflow.md`.
+
+---
+
 ## 0. Activation Triggers & Doc-Type Selector (MUST)
 
 Fire this rule when user intent matches ANY: `plan`, `implement`, `build`, `spec`, `architecture`, `roadmap`, `migration`, `refactor`, `milestone`, `writing`, `documentation`, explicit `@plan_and_documentation.md` reference, or handoff from [[.agents/rules/analysis_and_research.md]] Deep Mode output.
@@ -20,6 +62,13 @@ Select doc type before writing:
 **Anti-Overfire rule:** planning keywords alone are insufficient. Require intent to change code, schema, config, or documented behavior. When ambiguous, default to Lite doc, never Full.
 
 **Plan-vs-Execute gate:** drafting a plan is review-only. NEVER execute Tier 2 phases in the same turn unless the user says `proceed`, `execute`, or `implement`. State `Status: Review-Only` or `Status: Proceed-Authorized` at the top of every plan.
+
+**Write-to-disk rule (BLOCKING).** When the user explicitly asks for the plan and
+the audit report, the artifacts MUST be written to disk per the Artifact Location
+& Storage Contract above. Proposing the content in chat without creating
+`docs/<topic-slug>/plan.md` and `docs/<topic-slug>/audit.md` is a failure, not a
+draft. When the user does *not* ask for files, chat-only output is fine and no
+folder is created.
 
 ---
 
@@ -137,7 +186,7 @@ Near the bottom of the document, provide a comprehensive Markdown task list refl
   - Type check: `npx astro check` (must report zero errors)
   - Preview smoke test: `bun run preview`, then load `/` and confirm the page renders styled.
   - End-to-end smoke tests and acceptance checks against the success criteria in Tier 1.
-- **Zero-Trust & Tooling (BLOCKING):** NEVER open, read, parse, or grep `.env`, `.env.local`, or any `*.env` file — use `.env.example` if present. Use `bun` / `bunx` exclusively; do not introduce npm, pnpm, or yarn.
+- **Zero-Trust & Tooling (BLOCKING):** NEVER open, read, parse, or grep `.env`, `.env.local`, or any `*.env` file — use `.env.example` if present. Use `bun` / `bunx` exclusively; do not introduce npm, pnpm, or yarn. Never write outside the project drive: plans, audits, and evidence stay inside this repo per the Artifact Location & Storage Contract.
 
 ---
 
@@ -148,6 +197,7 @@ Every Full 4-tier plan MUST start from this skeleton. Single canonical copy — 
 ```markdown
 Status: Review-Only | Doc-Type: Full
 # <Title> — Implementation Plan
+<!-- desc: one-line summary -->
 
 > [!IMPORTANT] — Stack: Astro + Tailwind v4 via `@tailwindcss/vite`, bun package manager (versions per `AGENTS.md` / `bun.lock`). Design tokens are frozen in `DESIGN.md`; new tokens are a breaking change. Never read or commit `.env*`. Breaking-change risk: <state>.
 ## 1. Objectives & Success Criteria (scope in/out, deliverables)
@@ -157,6 +207,9 @@ Status: Review-Only | Doc-Type: Full
 ## 5. Execution Guide + Verification (order, rollback, `bun run build` / `npx astro check`, smoke tests)
 ## 6. Changelog
 ```
+
+The companion audit lands beside it as `docs/<topic-slug>/audit.md` with the same
+H1 + `<!-- desc: ... -->` pair. No path outside the contract in the top section.
 
 ---
 
