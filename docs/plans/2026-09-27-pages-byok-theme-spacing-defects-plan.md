@@ -1,4 +1,4 @@
-Status: In Execution (Phase 0 complete) | Doc-Type: Full
+Status: In Execution (Phases 0–4 complete; final gate F.1–F.5 and D15 outstanding) | Doc-Type: Full
 
 # Pages Deployment, BYOK Diagnostics, Light-Theme Borders & Panel Spacing — Implementation Plan
 
@@ -455,16 +455,54 @@ $ bun test src/lib/client/quota.test.ts
 
 $ bun test --timeout 60000 src/lib/client/quota.test.ts
  16 pass  0 fail
-Ran 16 tests across 1 file. [3.85s]
 ```
 
-The cause is arithmetic, not flakiness: 260 sequential `recordSpend` calls, each
-re-serialising a log that grows to 200 entries, is quadratic. It passed in the
-Phase 0 run on a more heavily loaded machine and fails in a quieter one, which
-is the worst way for a test to behave. Fixing it means choosing between a
-cheaper fixture and a per-test timeout, and both are changes to a file this
-phase was scoped not to touch. Queued as **1.10** pending approval; it blocks
-F.2, not this phase's own assertions.
+**D13's stated cause was wrong, and measuring it was worth more than the fix.**
+`D13` attributed the cost to "260 sequential `recordSpend` calls, each
+re-serialising a log that grows to 200 entries, is quadratic". The serialisation
+is **23 ms** across all 260 iterations — it is not the cost. The cost is
+`quota.ts:141`: `pacificDay` constructs a **fresh `Intl.DateTimeFormat` on every
+call**, and `recordSpend` (`quota.ts:169`) calls it once per stored entry.
+
+```
+260 parse+stringify of <=200 entries                    23 ms
+34,000 Intl.DateTimeFormat constructions + format() 10590 ms   (~0.31 ms each)
+```
+
+The loop *is* quadratic, but the constant is the formatter, not the JSON. That
+also explains why the timing drifted between runs: 13.2 s on a quiet machine,
+6.0 s on the loaded one that recorded `D13`. A cost that scales with machine load
+is not flake — it is a cost model nobody had written down, and this plan asserted
+one and was wrong.
+
+**The fix is a fixture, not a timeout.** The test now seeds a log at the cap
+directly and overflows it by ten, which is the only state in which truncation
+happens at all; the old loop ran 200 entries *short* of that boundary. Coverage
+went up rather than down — 2 assertions to 5, `expect()` calls in the file 32 to
+35 — and two marker endpoints pin the cut-off to "dropped exactly ten, no more".
+`quota.ts` is untouched (`git diff --stat` empty for it), no per-test timeout was
+added, and none is needed:
+
+```
+$ bun test src/lib/client/quota.test.ts
+ 16 pass  0 fail  35 expect() calls
+Ran 16 tests across 1 file. [236.00ms]      # was 13.22s
+```
+
+**D15 — the same formatter is tens of milliseconds of main-thread work per *user*
+request, and 1.10 did not fix it because it is not a test defect.** With a full
+200-entry log, one real `recordSpend` call runs ~201 formatter constructions on
+the request path, in every tab open long enough to fill its log. Re-measured
+independently of the 260-call loop: **34 ms** for 201 constructions and
+`format()` calls, against the ~0.31 ms/call implied by the 34,000-construction
+figure above — the spread is warm-up, and the honest claim is "tens of
+milliseconds", not one number. `pacificDay` is pure over a constant option set, so
+a single module-level `Intl.DateTimeFormat` collapses it to one construction. That
+is a production change in `quota.ts` and this phase was scoped to the test file, so
+it is recorded rather than absorbed. It is a performance defect with a measured
+cause and a one-line fix, not a hypothesis — and it is the only item in this plan
+that was found by fixing something else.
+
 
 
 ---
@@ -535,6 +573,83 @@ in scope.
 at ≥ 3:1; the three previously-`warn`/`info` rows are either passing failures or
 deliberate exclusions with a stated reason; `DESIGN.md` and `global.css` agree.
 
+**Result, 2026-09-27.** Met, with three things the phase did not foresee.
+
+**The measured ratios are not the ones §2.1 predicted.** §2.1 stated 3.30:1 on
+white and 3.23:1 on canvas for `#8c8c8c`. Measured, they are **3.36:1** and
+**3.22:1** — the ordering of the plan's two figures was simply wrong. The hex is
+unchanged and the conclusion is unchanged, because the paragraph it sat in said
+the value would be confirmed by measurement rather than trusted, which is what
+happened. Canvas is the *harder* surface, not the easier one, and the files now
+say so in that order.
+
+**D14 — the gate was enforcing a list that could not drift, because it never
+read anything.** The script's own header has always said: *"this script is a
+specification of the intended pairs, and it should FAIL if the stylesheet and
+this list drift apart."* It cannot. `LIGHT` and `DARK` are hand-copied and the
+stylesheet was never opened, so restoring `#ebebeb` in `global.css` left the
+gate green — the exact failure Phase 2 exists to prevent, still reachable after
+Phase 2. This is the same class as `D12`: a check whose stated guarantee is
+unbacked.
+
+```js
+const DARK_RULE = /\[data-theme='dark'\]\s*\{/;   // never existed
+```
+
+The fix adds a `DRIFT` section that parses `global.css` — comments stripped
+first, so a hex inside a rationale is prose rather than a token, and the dark
+block sliced by brace counting so a later `[data-theme='dark'] .selector` cannot
+be swallowed. Missing block is a failure, not an empty set that trivially
+agrees. Tokens declared but not audited are named, one line per theme, so a
+pair nobody is checking is visible without twenty identical lines per run.
+Both failure modes are proven, not asserted:
+
+```
+$ # global.css reverted to #ebebeb, script untouched
+FAIL  light.hairline       #ebebeb   (listed #8c8c8c)
+1 failure(s). Fix the token, do not lower the bar.       # EXIT=1
+
+$ # BOTH reverted — the exact pre-Phase-2 state
+=== LIGHT — borders (bar 3:1, SC 1.4.11) ===
+FAIL    1.14:1  card border on canvas
+FAIL    1.19:1  input border in cards
+2 failure(s). Fix the token, do not lower the bar.       # EXIT=1
+```
+
+**The dark theme is below the bar too, and Phase 2 did not fix it.** `BORDER_PAIRS`
+is now keyed by theme, and `dark` is empty, because `#262626` measures 1.22:1 in
+cards and 1.31:1 on canvas. Enforcing it would have taken CI red on a theme the
+phase was scoped not to touch. It is therefore recorded in three places rather
+than argued away in one: `BORDER_EXCLUSIONS` (measured, printed, not counted,
+with the reason attached), a new rule in `DESIGN.md`'s dark-ramp list, and the
+`docs/development.md` known-gap note. The honest reason is that "a 1px step on a
+near-black field reads as a visible edge where the same ratio on near-white does
+not" is a *perceptual* argument, and `DESIGN.md`'s own rule is that contrast is
+arithmetic. The dark fix is a separate decision with its own visual review;
+this phase is not precedent for it, and the DESIGN.md bullet says so.
+
+**Two stale copies of the hex were found outside the three files Phase 2 listed.**
+`README.md:269` and `DESIGN.md:243` both stated `#ebebeb` in prose. A design-system
+edit that leaves user-facing docs quoting the old value is a broken change no
+matter how correct the CSS is, and `AGENTS.md` requires the docs move in the same
+turn. Both corrected. The `docs/superpowers/` spec and the Phase 2.1 plan code
+block were left alone deliberately: they are historical records of the
+pre-Phase-2 state, and the evidence file at `D9` depends on `#ebebeb` still being
+what it measured.
+
+**Verified.** `bun run check:contrast` exit 0, with both light border pairs
+enforcing at 3.22:1 and 3.36:1. `check:secrets`, `check:routes`, `check:shell`,
+`check:panel`, `check:spacing` all exit 0. `bun run build` and `bun run check`
+exit 0 on **both** targets. `bun test` 344 pass / 0 fail. Built CSS carries
+`8c8c8c` exactly once and no `ebebeb` at all. `check:spacing` remains red on the
+static build, which is Phase 3's deliverable and is unaffected.
+
+**Not run.** The §5.3 browser pass — a light/dark screenshot of `/` and both tool
+pages to confirm the new boundary is visible to the eye. A dev server was started
+and the page returned 200, but the screenshot was not taken before the phase was
+closed. The arithmetic, the drift control and the built artifact are all proven;
+the perceptual claim is not.
+
 ---
 
 ### Phase 3 — Panel spacing (`D11`)
@@ -570,6 +685,42 @@ between two 1.14:1 borders is invisible, and the fix would appear to do nothing.
 **Acceptance.** `bun run check:spacing` exits 0 with a **positive control** proven
 in the same run. `bun run build` and `bun run check` exit 0 for both targets.
 
+**Result, 2026-09-27.** Met exactly as written — one class on one element — and
+the phase needed nothing else.
+
+```
+$ $env:PAGES_TARGET = "pages"; bun run build          # BUILD_EXIT=0
+$ bun run check:spacing
+pass  an unspaced #byok is caught: #byok sits directly below #quota with no top
+      margin and no gap on #main. Two bordered cards flush against each other read
+      as one box.
+pass  a column spaced by the parent passes, so the gate asserts the gap and not the
+      class name
+pass  text-to-speech: every stacked panel in #main carries a non-zero gap
+pass  speech-to-text: every stacked panel in #main carries a non-zero gap
+
+Vertical rhythm holds. No two stacked panels touch.   # EXIT=0
+```
+
+`scripts/check-spacing.mjs` needed no change, because Phase 0 wrote it against the
+outcome rather than against `mt-6` — the deviation recorded in that phase's result
+is what made this a one-line fix instead of a negotiation with the gate. Both
+positive controls still fire: the first proves the gate can fail, the second proves
+it is not pinned to one way of spacing a column.
+
+Both targets typecheck and build clean:
+
+```
+$ $env:PAGES_TARGET = "pages"; bun run check    # 0 errors, 0 warnings, 0 hints
+$ bun run build; bun run check                   # exit 0 / 0 errors
+```
+
+**Not run.** The §5.3 browser pass that shows the gap to the eye. The same omission
+Phase 2 recorded, for the same reason: the arithmetic and the built artifact are
+proven, the perceptual claim is not. It is now the only thing standing between this
+plan and a fully verified close, and it needs one screenshot pass over `/`,
+`/text-to-speech` and `/speech-to-text` in both themes.
+
 ---
 
 ### Phase 4 — Documentation sync (`D1` `D2`)
@@ -602,6 +753,99 @@ Per `AGENTS.md`, this happens in the same turn as the code changes, not after.
 data folder, and the evidence document. Every command quoted in the new section has
 been run in this session.
 
+**Result, 2026-09-27.** Met. The section written is
+[`docs/development.md` → Deployment targets](../../development.md#deployment-targets),
+and it exists because writing it produced two findings the plan did not anticipate.
+
+**Every command in it was run first, which is how the second finding surfaced.**
+
+```
+$ bun run build                                              # exit 0
+$ bun run check                                              # 0 errors, 0 warnings, 0 hints
+$ bun run smoke
+✓ page          200 (14791 bytes)
+  … 14 checks elided (both panels, chrome, rate limit, route leak) …
+✓ health         200 — configured: Gemini accepted the key.
+✓ live-token    200 — the server can see a key
+✓ socket URL    wss + ephemeral token, no raw key
+# SMOKE_EXIT=0
+
+$ $env:PAGES_TARGET = "pages"; bun run build; bun run check; bun run check:panel
+# BUILD=0  CHECK=0  PANEL=0
+$ bun run check:spacing
+pass  text-to-speech: every stacked panel in #main carries a non-zero gap
+pass  speech-to-text: every stacked panel in #main carries a non-zero gap
+Vertical rhythm holds. No two stacked panels touch.
+```
+
+**D16 — the plan's own §5.2 proof command no longer proves what it says.**
+Success criterion 7 reads *"no `GEMINI_API_KEY` appears anywhere in
+`dist/client/`"*, and §5.2 gives a `Select-String` for `GEMINI_API_KEY|AIza|AQ\.`
+as the standing check. Run against the static build, it now matches — three times,
+in one minified line:
+
+```
+provider.C4NOgNjs.js:1
+  GEMINI_API_KEY -> 1     "…Check GEMINI_API_KEY in your .env file."      <- user-facing copy
+  AIza           -> 2     /(?:AIza|AQ\.)[0-9A-Za-z_-]{5,}/g               <- the redaction pattern
+```
+
+Both are consequences of Phase 1, and neither is a leak. The second is
+`classify.ts`'s scrubber, which *must* ship to the browser: it is what stops an
+upstream error body from echoing key material into the UI. The honest form of
+criterion 7 is what `check:secrets` already tests — no key-**shaped literal**,
+which exits 0. A gate that has been reduced to a grep people were told to ignore
+is worse than the grep, so §5.2's command is corrected in place and the reason is
+written into `docs/development.md` where the gate is documented. Recorded rather
+than quietly dropped, because a criterion that was true for one phase and false
+for the next is a fact about the plan.
+
+**D17 — a local `check:panel` run replaces the static build with a node build.**
+Already fixed in CI by `pages.yml`'s job-level `env`, and already described in
+`docs/development.md` for the CI case. Running the phase's own commands proved the
+local case is the same trap with no guard at all:
+
+```
+$ $env:PAGES_TARGET = "pages"; bun run build; bun run check:panel
+(Get-ChildItem dist\client -Recurse -Filter index.html).Count   ->  3
+
+$ bun run build; bun run check:panel          # new shell, no PAGES_TARGET
+(Get-ChildItem dist\client -Recurse -Filter index.html).Count   ->  0
+```
+
+Zero pages, exit 0, no message. `check:panel` inherits `PAGES_TARGET` from its
+environment and rebuilds the project twice, so a *node* rebuild lands on top of a
+static artifact. The variable has to be set for the whole sequence, not per
+command — now stated in `AGENTS.md`'s verification rule, in the gate-maturity
+table in `docs/agent-workflow.md`, and in the new section with the two commands
+side by side. It was found by *using* the documented workflow, not by reading it.
+
+**Stale claims corrected in the same turn**, per `AGENTS.md`'s documentation
+rule. None of these were on the phase's file list; all five were false statements
+about work an earlier phase had already completed:
+
+| Claim | Where | Correction |
+| --- | --- | --- |
+| "`check:spacing` — **Currently failing**" | `README.md` commands table | Phase 3 fixed it; now records the defect it caught and the node-build skip |
+| "There is no Dockerfile and no CI" | `README.md` deployment | CI exists and deploys the static target on every push; the node build has no pipeline |
+| "There is no CI enforcing them yet" | `docs/development.md` commands | Same, stated per-target rather than corrected once and contradicted below |
+| `check:spacing` "passes on a node build for the wrong reason … the unspaced `#byok` panel is invisible to it" | `docs/agent-workflow.md` gate table | Maturity is now *has caught a real defect*, with the static-build requirement kept |
+| `check:panel` "Maturity not yet recorded" | same table | It has caught one — the missing `input` reconciliation |
+
+**Verified.** `bun run docs:sync` exit 0, 7 documents, 0 in the archive, 3 in
+`docs/plans/`; `docs/README.md` is byte-identical after the run because it
+already listed this plan and its evidence document. `bun run build` + `bun run
+check` exit 0 on **both** targets. `check:contrast` `check:secrets` `check:routes`
+`check:shell` exit 0 on the node build; `check:panel` `check:spacing`
+`check:secrets` exit 0 on the static one.
+
+**Not run.** The final gate (F.1–F.5) and the §5.3 browser pass. This phase is
+prose, so it added no new unverified claim — but it did not discharge them
+either. Two are cheap: F.1 is one command list against one artifact, and F.2 is
+`bun test`. One is not cheap and has now been deferred by three consecutive
+phases: the light/dark screenshot pass over the three routes, which is the only
+thing that would confirm by eye what Phases 2 and 3 proved arithmetically.
+
 ---
 
 ## 4. Progress checklist
@@ -625,28 +869,49 @@ been run in this session.
   - [x] 1.7: Persist only on accepted or unknown; disable in flight
   - [x] 1.8: Honest scope copy for the static deployment (D8)
   - [x] 1.9: Fix the stale "on the way" copy on `/`
-  - [ ] 1.10: **NEW** — `quota.test.ts` is marginal against bun's 5s default
-        timeout. See `D13` below.
-- [ ] **Phase 2: Light-theme borders (D9 D10)**
-  - [ ] 2.1: Re-measure `hairline`; pick a value ≥ 3:1 on white and canvas
-  - [ ] 2.2: Change `--color-hairline` in `global.css`
-  - [ ] 2.3: Border pairs enter the `check:contrast` exit code
-  - [ ] 2.4: Drop `hairline-soft` from the table as out of scope for 1.4.11
-  - [ ] 2.5: Rewrite the rationale comment — it is a resolution, not a defence
-  - [ ] 2.6: Record the change in `DESIGN.md` (token table + Colors section)
-- [ ] **Phase 3: Panel spacing (D11)**
-  - [ ] 3.1: `mt-6` on the `ByokSettings` root section
-  - [ ] 3.2: `check:spacing` GREEN, positive control still proven
-  - [ ] 3.3: `bun run build` + `bun run check` green on BOTH targets
-- [ ] **Phase 4: Documentation sync (D1 D2)**
-  - [ ] 4.1: `docs/development.md` — deployment targets and where a secret lives
-  - [ ] 4.2: `README.md` — run it; one verification command per target
-  - [ ] 4.3: `bun run docs:sync`
-- [ ] **Final gate**
-  - [ ] F.1: `check:contrast` `check:secrets` `check:routes` `check:shell` `check:panel` `check:spacing` all exit 0
-  - [ ] F.2: `bun test` green
-  - [ ] F.3: No `GEMINI_API_KEY` in `dist/client/`
-  - [ ] F.4: Changelog entry appended below
+  - [x] 1.10: **NEW** — `quota.test.ts` was marginal against bun's 5s default
+        timeout. See `D13` below. **Done** — and the measurement contradicted
+        `D13`'s diagnosis, so `D13` is corrected in place.
+- [x] **Phase 2: Light-theme borders (D9 D10)** — Complete 2026-09-27
+  - [x] 2.1: Re-measure `hairline`; pick a value ≥ 3:1 on white and canvas
+  - [x] 2.2: Change `--color-hairline` in `global.css`
+  - [x] 2.3: Border pairs enter the `check:contrast` exit code
+  - [x] 2.4: Drop `hairline-soft` from the table as out of scope for 1.4.11
+  - [x] 2.5: Rewrite the rationale comment — it is a resolution, not a defence
+  - [x] 2.6: Record the change in `DESIGN.md` (token table + Colors section)
+  - [x] 2.7: **NEW** — `check:contrast` now *parses* `global.css` and fails on
+        drift. Its header always claimed the duplicated token list would catch
+        this; it never read the file, so the claim was false. See `D14` below.
+  - [x] 2.8: **NEW** — `README.md` and the "Surfaces" paragraph in `DESIGN.md`
+        both stated `#ebebeb` and would have shipped a stale hex.
+  - [x] 2.9: **NEW** — the *dark* hairline is below 1.4.11 and was not fixed
+        here. `BORDER_EXCLUSIONS`, `DESIGN.md`'s dark-ramp rules and the
+        `docs/development.md` known-gap note all carry it as an open gap.
+- [x] **Phase 3: Panel spacing (D11)** — Complete 2026-09-27
+  - [x] 3.1: `mt-6` on the `ByokSettings` root section
+  - [x] 3.2: `check:spacing` GREEN, positive control still proven
+  - [x] 3.3: `bun run build` + `bun run check` green on BOTH targets
+- [x] **Phase 4: Documentation sync (D1 D2)** — Complete 2026-09-27
+  - [x] 4.1: `docs/development.md` — deployment targets and where a secret lives
+  - [x] 4.2: `README.md` — run it; one verification command per target
+  - [x] 4.3: `bun run docs:sync`
+  - [x] 4.4: **NEW** — the §5.2 proof grep matches on purpose after Phase 1
+        (`GEMINI_API_KEY` in UI copy, `AIza` in the redaction pattern). See
+        `D16`; the criterion is restated and the reason documented.
+  - [x] 4.5: **NEW** — a local `check:panel` run replaces a static build with a
+        node build, silently and with exit 0. See `D17`.
+  - [x] 4.6: **NEW** — five stale claims in `README.md` and `docs/agent-workflow.md`
+        about work Phases 0–3 had already completed, corrected in the same turn.
+- [ ] **Queued — D15: hoist the `Intl.DateTimeFormat` out of `pacificDay`**
+  - [ ] Q.1: one module-level formatter in `src/lib/client/quota.ts`; `quota.test.ts` unchanged
+  - [ ] Q.2: measure the 200-entry `recordSpend` path before and after (tens of ms -> ~0)
+- [ ] **Final gate** — **not run.** Four things stand between this plan and a
+  verified close, and none of them is code:
+  - [ ] F.1: `check:contrast` `check:secrets` `check:routes` `check:shell` `check:panel` `check:spacing` all exit 0, **in one sequence on the static target**. Each group has been run and reported green in this plan, but never all six together against the same artifact — and `check:panel` rewrites `dist/`, so an unordered run is not the same check.
+  - [ ] F.2: `bun test` green. Last recorded 344 pass / 0 fail at the end of Phase 2; not re-run since Phase 3's `quota.test.ts` change.
+  - [ ] F.3: no key-**shaped literal** in `dist/client/` — restated from the criterion Phase 1 falsified, see `D16`. The literal name `GEMINI_API_KEY` is expected there and is not a failure.
+  - [ ] F.4: the §5.3 browser pass — light and dark screenshots of `/`, `/text-to-speech` and `/speech-to-text` to confirm by eye what Phases 2 and 3 proved arithmetically: a visible card boundary, and no two stacked panels touching. **Deferred by Phases 2, 3 and 4.**
+  - [ ] F.5: Changelog entry appended below
 ```
 
 ---
@@ -688,8 +953,9 @@ Remove-Item Env:\PAGES_TARGET
 bun run build && bun run start
 Invoke-RestMethod http://localhost:4321/api/health   # expect state "configured"
 
-# No key in the client bundle
-Select-String -Path dist/client/**/*.js -Pattern "GEMINI_API_KEY|AIza|AQ\."
+# No key in the client bundle — the gate, not the grep
+bun run check:secrets            # asserts no key-SHAPED literal in dist/
+# A `GEMINI_API_KEY|AIza|AQ\.` grep also matches, on purpose: see D16.
 ```
 
 The last command is the standing proof that the Phase 1 and Phase 2 work did not
@@ -731,3 +997,6 @@ change. Two reversions need care:
 | 2026-09-27 | **Phase 0 complete.** `scripts/check-spacing.mjs` added with two positive controls (the defect, and the parent-side escape hatch); `check:spacing` registered in `package.json`; spawned from `check:panel`; added as a CI step in `pages.yml`; documented in `AGENTS.md`, `docs/development.md` and `.agents/rules/plan_and_documentation.md`. Proven RED on a static build with `byok` named on both tool pages. Green at the time of writing: `check:contrast`, `check:secrets`, `check:routes`, `check:shell`, `bun run check` (0 errors), `bun test` (285 pass), `bun run build` on both targets. **D12 recorded**: `check:panel`'s own positive control is red on `main` for a CRLF reason unrelated to this plan; queued as 0.6, blocking F.1. |
 | 2026-09-27 | **0.6 complete.** `check:panel`'s positive control now normalises line endings before stripping, restores the file byte-for-byte, and asserts *every* removal removed something instead of merely that the file changed — the `stripped === original` guard could not see a control that was three-quarters stripped. Control proven real again; `TtsPanel.astro` verified restored by SHA-256. |
 | 2026-09-27 | **Phase 1 complete.** New: `lib/gemini/classify.ts` (zero-import shared classifier, lifted out of `health.ts` so the browser can use it), `lib/client/capability.ts` (build-target fact), `lib/client/key-probe.ts` (non-billable `models?pageSize=1` probe). Changed: `health.ts` and `client.ts` onto the shared classifier — **which exposed the same dead-400-branch bug on the server path**, not only the browser; `gemini-direct.ts` body-aware with `KeyLocation` and upstream `redact`; `keystore.ts` target-aware `readMode()`, regex gate deleted; `ByokSettings.astro` really tests, tells a static visitor the truth before they press anything, and no longer claims Live "uses the server" when there is none; `index.astro` no longer says BYOK is on the way; `check-secrets.mjs` allowlist extended with a stated reason. Verified: `bun run build` + `bun run check` exit 0 on **both** targets; `check:contrast` `check:secrets` `check:routes` `check:shell` exit 0; `bun test` 343 pass / 1 pre-existing marginal timeout (D13). Static build confirmed to ship `byok` pre-selected, key fields visible, and the two-feature notice. `check:spacing` still red by design — that is Phase 3. |
+| 2026-09-27 | **Phase 2 complete.** `--color-hairline` (light) #ebebeb -> **#8c8c8c**, measured **3.22:1** on canvas and **3.36:1** on elevated. The plan's predicted figures (3.30 / 3.23) were wrong in ordering; the hex and the conclusion were not. `scripts/check-contrast.mjs`: border pairs now enter the exit code, `hairline-soft` moved to a stated exclusion (a fill, not a boundary), the "advisory" rationale comment replaced with the resolution, and `BORDER_PAIRS` keyed by theme. **D14**: the script duplicated its token list and never read `global.css`, so it could not fail on drift despite its header claiming it would; a `DRIFT` section now parses the stylesheet and both failure modes are proven by reverting the hex. The **dark** hairline (#262626, 1.22-1.31:1) is below 1.4.11 and was not fixed here - recorded in `BORDER_EXCLUSIONS`, `DESIGN.md` dark-ramp rules and the `docs/development.md` known-gap note. Two stale prose copies of `#ebebeb` (`README.md:269`, `DESIGN.md:243`) corrected. Verified: `check:contrast` exit 0 with both light border pairs enforcing; all six gates green; `bun run build` + `bun run check` exit 0 on both targets; `bun test` 344 pass / 0 fail; built CSS carries `8c8c8c` once and no `ebebeb`. `check:spacing` still red on the static build - that is Phase 3. Browser screenshot pass NOT run. |
+| 2026-09-27 | **Phase 3 complete.** One class: `mt-6` on the `ByokSettings` root `<section>`. `scripts/check-spacing.mjs` needed no change, because Phase 0 wrote it against the outcome (a non-zero gap) rather than against a class name. `check:spacing` GREEN on the static build with both positive controls firing. `bun run build` + `bun run check` exit 0 on both targets. Browser screenshot pass NOT run. |
+| 2026-09-27 | **Phase 4 complete.** `docs/development.md` gains a **Deployment targets** section: a three-row table (local dev / node host / GitHub Pages) stating where a key lives in each, why a static host has nowhere to put one, the `serverAvailable()` seam and its test, and one verification command per target with the output of running it today. `README.md` gains **Where a key belongs, per target** and loses three false claims. **D16**: the plan's own §5.2 proof grep (`GEMINI_API_KEY\|AIza\|AQ\.`) now matches on purpose - the variable's *name* in one user-facing string and `AIza` inside `classify.ts`'s redaction pattern, which ships to the browser precisely so upstream error text is scrubbed. Success criterion 7 restated as "no key-**shaped literal**", which is what `check:secrets` tests, and §5.2's command replaced by the gate. **D17**: a local `check:panel` run with no `PAGES_TARGET` in its environment replaces a static build with a node build - 3 prerendered pages become 0, exit 0, no message; the same guard CI already has is now documented for local runs in three places. Five stale claims corrected in the same turn per `AGENTS.md`: `check:spacing` "currently failing" in README, two "no CI" statements (CI exists and deploys the static target on every push), and two gate-maturity rows in `docs/agent-workflow.md`. Verified: `bun run docs:sync` exit 0 (7 documents, index byte-identical because it already listed this plan and its evidence); `bun run build` + `bun run check` exit 0 on both targets; `bun run smoke` exit 0 with `health 200 - configured`; `check:contrast` `check:secrets` `check:routes` `check:shell` exit 0 on the node build and `check:panel` `check:spacing` `check:secrets` exit 0 on the static one. **Final gate F.1-F.5 not run** - all six gates in one sequence, `bun test`, and the §5.3 browser pass are still outstanding. |

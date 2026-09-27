@@ -220,8 +220,8 @@ to fail — a gate that cannot fail is worse than no gate.
 | `check:secrets` | `bun run check:secrets` | Has caught a real defect. |
 | `check:routes` | `bun run check:routes` | Has caught a real defect. |
 | `check:shell` | `bun run check:shell` | Proven able to fail; has not yet caught anything. |
-| `check:panel` | `bun run check:panel` | Maturity not yet recorded — add a row here the first time it catches something. |
-| `check:spacing` | `bun run check:spacing` | Proven able to fail by its positive control, but it passes on a node build for the wrong reason: it skips the real-page check, because `output: 'server'` renders HTML on demand, so the unspaced `#byok` panel (`src/components/ByokSettings.astro`, stacked flush under `#quota`) is invisible to it. CI builds the static target and asserts there. Verified 2026-09-27: exit 0, three real-page checks skipped. |
+| `check:panel` | `bun run check:panel` | Has caught a real defect — the shipped bundle's missing `input` reconciliation, the permanently disabled Generate button. |
+| `check:spacing` | `bun run check:spacing` | Has caught a real defect — the unspaced `ByokSettings` panel (`src/components/ByokSettings.astro`), stacked flush under `#quota`. Its real-page check only runs against a **static** build, because `output: 'server'` renders HTML on demand: on a node build it prints `skip` with the reason and asserts nothing. It also rebuilds the project twice, so it inherits `PAGES_TARGET` from its environment and will replace a static artifact with a node build when the variable is not set for the whole sequence. Verified 2026-09-27 on the static target: exit 0, two real pages asserted. |
 
 `verify:stt` is a procedure, not a passing test. It synthesises an enumerated-list
 passage and judges Smart against Verbatim by line structure, with `--mode

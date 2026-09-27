@@ -28,7 +28,10 @@ Detail behind [`AGENTS.md`](../AGENTS.md). Read on demand.
 | `bun run verify:stt` | One live STT recording that settles whether Smart mode is honoured or silently downgraded to Verbatim. **Never executed** — see [Verifying STT end to end](#verifying-stt-end-to-end) |
 
 `bun run build` and `bun run check` are the two gates. Run both before opening a
-pull request. There is no CI enforcing them yet.
+pull request. `.github/workflows/pages.yml` runs them on every push to `main`,
+along with `check:panel`, `check:spacing` and an assertion that the three
+prerendered pages survived every rebuild — but for the **static** target only.
+The node build has no pipeline, so the node gates are on you.
 
 `bun run start` exists because `node dist/server/entry.mjs` **does not load
 `.env`** — see [The standalone server does not load `.env`](#the-standalone-server-does-not-load-env).
@@ -159,6 +162,16 @@ failed on two false positives — `ByokSettings.astro` renders `x-goog-api-key`
 inside a `<code>` element as part of the user's security statement, and
 `gemini-direct.ts` names `?key=` in the comment explaining why it never does
 that. A gate that cries wolf on its own documentation gets ignored.
+
+**Do not replace the gate with a grep.** `Select-String -Path "dist/client/**" -Pattern
+"GEMINI_API_KEY|AIza|AQ\."` does match in the static build — three times, all in
+one minified line of `dist/client/_astro/provider.*.js`, and all harmless: the
+*name* of the variable appears in one user-facing string ("Check GEMINI_API_KEY
+in your .env file."), and `AIza` appears twice inside the redaction pattern in
+`gemini/classify.ts`, which ships to the browser so upstream error text can be
+scrubbed before it is rendered. What matters is the absence of key *material*,
+and that is what `check:secrets` tests: a shaped literal, never a name or a
+character class.
 
 What it cannot prove: what a browser does at runtime. The "never reaches our
 origin" claim rests on the routing tests, which capture the actual `fetch` URLs.
@@ -610,6 +623,109 @@ reports the page, both tools on the route that owns each, and whether the server
 can see a key. It prints
 **no key material** — only booleans and the server's own error text.
 
+## Deployment targets
+
+Three targets, one source tree. What differs between them is not the code —
+`astro.config.mjs` reads `PAGES_TARGET` and everything else follows — but
+**where a Gemini key is allowed to live**, which is the question this project
+could not answer before the static target stated its own constraint.
+
+| Target | Build | Where a key lives | Server routes | "Is my key working here?" |
+| :--- | :--- | :--- | :--- | :--- |
+| Local dev | `bun run dev` | `.env` on this machine | yes | `GET /api/health` → `state` |
+| Node host (default) | `bun run build` + `bun run start` | `.env`, or that host's own secret store | yes | `bun run smoke` → `✓ health 200 — configured` |
+| GitHub Pages (static) | `PAGES_TARGET=pages bun run build` | **nowhere — a static host has nothing that can read one** | no | the **Save and test** control in the BYOK panel |
+
+### Why Pages has no key, restated so it is not re-litigated
+
+GitHub Pages' contract is *upload files to a CDN*. `actions/upload-pages-artifact`
+takes a path and serves it; there is no process, no environment, and therefore
+no request-time reader for a secret. A CI secret store is a **build-time** store
+— it injects values into a job so a build can consume them — so "put the key in
+GitHub Secrets" cannot answer a runtime read. The only way to make the static
+build consume a key is to inline it into a client bundle, at which point it is a
+published file and not a secret. `.github/workflows/pages.yml` therefore sets no
+`GEMINI_API_KEY`, and the static build is BYOK-only by design rather than by
+omission.
+
+### What the build knows, and what the client asks
+
+`serverAvailable()` in `src/lib/client/capability.ts` is the whole mechanism: it
+is true when `import.meta.env.BASE_URL` is `/` or `''`, and the only non-root
+`base` in `astro.config.mjs` is the Pages target. `readMode()` in
+`src/lib/client/keystore.ts` defaults to `'byok'` when it is false, so a static
+visitor starts on the one provider that can work there.
+
+Before this, the default was `server` on every target. The build-time fact was
+discarded and reconstructed at request time from a 404, so the first thing a
+new visitor did was fail and learn about it from an error message about a server
+that does not exist. `capability.test.ts` asserts the `base` ↔ target coupling
+against `astro.config.mjs` itself: a future base path on a *server* build would
+point every page at a host that is not there, and nothing else in the toolchain
+would notice.
+
+The server option stays selectable on the static target and still returns an
+honest 501 from `explainMissingServer()`. Silently removing a choice is worse
+than offering one that explains itself.
+
+### One verification command per target
+
+Run in this session on 2026-09-27, each target built immediately before it was
+checked:
+
+```powershell
+# Node target — the product
+bun run build
+bun run smoke
+#   ✓ health         200 — configured: Gemini accepted the key.
+
+# Static target — the demo
+$env:PAGES_TARGET = "pages"
+bun run build
+bun run check:spacing
+#   Vertical rhythm holds. No two stacked panels touch.
+Remove-Item Env:\PAGES_TARGET
+```
+
+`bun run smoke` is the node row's whole answer: it starts the built server with
+`.env` loaded and prints the state, so it distinguishes *no key*, *bad key* and
+*no budget* without you reading a body. `Invoke-RestMethod
+http://localhost:4321/api/health` returns the same `state` against a dev server
+or a running deployment.
+
+**The static row's verification is a button, and there is deliberately no
+command for it.** The check that matters there is the visitor's own key tested
+in the visitor's own browser by "Save and test"
+(`src/lib/client/key-probe.ts`, `models?pageSize=1`, no quota spent). A
+server-side command could only ever test *your* key, which proves nothing about
+the target. `bun run verify:stt` is the one existing command that accepts a
+BYOK key — from `STT_VERIFY_KEY` or `GEMINI_API_KEY` in the environment rather
+than an argument, so it stays out of shell history — but it costs two requests
+of the free tier, answers a different question, and **has never been run**.
+
+### A local `check:panel` run replaces a static build with a node build
+
+Measured while writing this section, and it is the same trap CI already fixed:
+
+```powershell
+$env:PAGES_TARGET = "pages"
+bun run build
+bun run check:panel          # check:panel rebuilds the project twice
+(Get-ChildItem dist\client -Recurse -Filter index.html).Count   # -> 3
+
+# same, without the variable in the environment
+bun run build; bun run check:panel
+(Get-ChildItem dist\client -Recurse -Filter index.html).Count   # -> 0
+```
+
+`check:panel` inherits whatever `PAGES_TARGET` its shell can see, and its two
+rebuilds are writers of the artifact. With the variable set at **process** scope
+the pages survive; without it the static output is silently replaced by a node
+build whose `dist/client` holds hashed assets and no HTML. In CI this is handled
+by `pages.yml`'s job-level `env`, so every step in the job builds the same
+target. Locally, export the variable for the whole sequence rather than per
+command.
+
 ## Environment quirk: `bun install` fails on `E:`
 
 ```
@@ -683,15 +799,21 @@ error.
 
 ## Known gaps
 
-- **Input borders are below WCAG 1.4.11.** `hairline` sits at 1.14:1 on canvas
-  and 1.19–1.22:1 in cards, where 3:1 is the reference for a boundary that
-  identifies a control. Card borders and dividers are exempt (decorative), but
-  an input's border is arguably not. `bun run check:contrast` reports this pair
-  as `warn` rather than failing it. Lifting `hairline` to 3:1 would contradict
-  DESIGN.md's "define cards and inputs with a 1px hairline before any shadow"
-  and turn every card into a heavy grey rule, so it was left as a recorded gap
-  rather than silently "fixed" — the inputs do carry a label and a 4.70:1
-  focus ring as other affordances.
+- **Dark-theme input borders are still below WCAG 1.4.11.** The light theme is
+  fixed: `hairline` moved #ebebeb → **#8c8c8c**, which measures 3.22:1 on canvas
+  and 3.36:1 in cards, and `bun run check:contrast` now counts those two pairs as
+  failures rather than printing them as `info`/`warn` and exiting 0. The dark
+  theme is unchanged at #262626 — 1.22:1 in cards, 1.31:1 on canvas — so the same
+  script reports it as a `skip` with the reason attached, and
+  `scripts/check-contrast.mjs`'s `BORDER_EXCLUSIONS` names it as a recorded gap
+  rather than removing it. A 1px step on a near-black field reads as a visible
+  edge where the same ratio on near-white does not, which is a perceptual
+  argument and not an accessibility one; changing the dark value is a separate
+  decision with its own visual review, and the light-theme fix is not precedent
+  for it. `DESIGN.md`'s dark-ramp rules carry the same note.
+  The token is duplicated in `check-contrast.mjs` on purpose, and the script now
+  parses `src/styles/global.css` and fails on any disagreement, so the two
+  cannot drift apart silently.
 - **No fonts installed.** `DESIGN.md` specifies Geist Sans and Geist Mono, but
   `src/assets/` holds only SVGs and `public/` only favicons. The documented
   `Arial` / `ui-monospace` fallbacks are what actually render.

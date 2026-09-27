@@ -132,6 +132,32 @@ function write(entries: SpendEntry[]): void {
 }
 
 /**
+ * Built once, not per call. `Intl.DateTimeFormat` is expensive to construct —
+ * measured here at ~0.15 ms each — and `recordSpend` calls `pacificDay` once
+ * per stored entry, so constructing one per call put ~30 ms of main-thread
+ * work on the request path in any tab whose log had filled up. The options
+ * below are a constant, so the formatter is pure over them and one instance
+ * serves the whole module. `undefined` = not tried yet, `null` = no ICU here.
+ */
+let pacificFormatter: Intl.DateTimeFormat | null | undefined;
+
+function getPacificFormatter(): Intl.DateTimeFormat | null {
+  if (pacificFormatter === undefined) {
+    try {
+      pacificFormatter = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'America/Los_Angeles',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      });
+    } catch {
+      pacificFormatter = null;
+    }
+  }
+  return pacificFormatter;
+}
+
+/**
  * Today, in Pacific time, as `YYYY-MM-DD`.
  *
  * `en-CA` is the locale whose short date format *is* ISO-8601, so this needs
@@ -139,12 +165,9 @@ function write(entries: SpendEntry[]): void {
  */
 export function pacificDay(at: number = Date.now()): string {
   try {
-    return new Intl.DateTimeFormat('en-CA', {
-      timeZone: 'America/Los_Angeles',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-    }).format(new Date(at));
+    const formatter = getPacificFormatter();
+    if (formatter === null) throw new Error('no ICU');
+    return formatter.format(new Date(at));
   } catch {
     // An environment without ICU (some minimal server-side renders) falls
     // back to the UTC day. Wrong by hours at worst, and it is a counter, not

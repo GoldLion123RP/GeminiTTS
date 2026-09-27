@@ -32,9 +32,17 @@ import { serverAvailable } from '../lib/client/capability';
 const serverPresent = serverAvailable();
 ---
 
+<!--
+	`mt-6` is not decoration. `QuotaMeter` is this panel's sibling in both tool
+	pages, and without a matching margin the two 1px-bordered cards sat flush,
+	their borders reading as one rule. The margin was invisible while the hairline
+	was 1.14:1; Phase 2 raised it to 3:1, which is what made the missing gap
+	visible rather than merely wrong. `scripts/check-spacing.mjs` asserts it
+	against the built pages, so a third unspaced panel cannot join them.
+-->
 <section
 	id="byok"
-	class="rounded-card border border-hairline bg-elevated p-6 shadow-whisper"
+	class="mt-6 rounded-card border border-hairline bg-elevated p-6 shadow-whisper"
 	aria-labelledby="byok-heading"
 >
 	<div class="flex flex-col gap-2">

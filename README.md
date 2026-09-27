@@ -104,12 +104,13 @@ whether the built server can see it.
 | `bun run check:routes` | Assert no test file under `src/pages/` ships as a live route (run after `build`) |
 | `bun run check:shell` | Assert the shell contract: no-flash bootstrap ordering, skip link, 640px nav switch |
 | `bun run check:panel` | Run the shipped TTS bundle against a DOM stub and assert the cost gate opens for typed *and* restored text, then run `check:spacing` (run after `build`) |
-| `bun run check:spacing` | Assert every stack of sibling panels carries a non-zero vertical gap, read from the built HTML. Currently **failing** — `ByokSettings` has no top margin. `PAGES_TARGET=pages bun run build` puts the pages on disk; a node build renders HTML on demand and the gate says so |
+| `bun run check:spacing` | Assert every stack of sibling panels carries a non-zero vertical gap, read from the built HTML. **Caught a real defect** — `ByokSettings` had no top margin. `PAGES_TARGET=pages bun run build` puts the pages on disk; a node build renders HTML on demand, and the gate prints `skip` with the reason rather than passing silently |
 | `bun run verify:stt` | One live recording that settles whether Smart mode is honoured or silently downgraded to Verbatim. **Never executed** — it has no output because no credential was available when it was written. Costs two requests of the free tier. |
 | `bunx astro --help` | Astro CLI reference |
 
 `bun run check` and `bun run build` are the two gates. Run both before opening a
-pull request; neither is enforced in CI yet because there is no CI.
+pull request. The Pages workflow runs them on every push to `main`, but only for
+the static target — the node build is gated by hand.
 
 > [!WARNING]
 > **Do not run `node ./dist/server/entry.mjs` directly.** The standalone server
@@ -221,7 +222,34 @@ state and costs no quota: it reads `models?pageSize=1`, never a generation.
 >    N instances behind a load balancer get N times the limit.
 
 `bun run build && bun run start` is a working local deployment. There is no
-Dockerfile and no CI — neither was in scope.
+Dockerfile. There *is* CI, and it builds the **static** target only —
+`.github/workflows/pages.yml` installs, builds, type checks, runs the panel and
+spacing gates, asserts the three prerendered pages still exist, and deploys on
+every push to `main`. The node build has no pipeline; run `bun run build` and
+`bun run check` yourself before a release.
+
+### Where a key belongs, per target
+
+| Target | Key | Put it in | Prove it |
+| :--- | :--- | :--- | :--- |
+| Local dev | yours | `.env` (gitignored) | `bun run dev`, then `GET /api/health` |
+| Node host | yours | `.env` locally, or that host's own secret store — **not** the repository | `bun run smoke` → `✓ health 200 — configured` |
+| GitHub Pages | **the visitor's** | nowhere — a static host has no process that could read a secret | the **Save and test** button in the BYOK panel |
+
+That is not an oversight. Pages' contract is *upload files to a CDN*: it serves a
+directory and runs nothing, so there is no request-time reader for a secret. A CI
+secret store is a build-time store — it injects values into a job so the build can
+use them — so adding the key to GitHub Secrets cannot make a static site read it.
+The only way to do that is to inline the key into a client bundle, which
+publishes it. The Pages workflow therefore sets no `GEMINI_API_KEY`, and BYOK is
+the pre-selected provider on that build, so a first-time visitor is told the
+constraint before they press anything.
+
+On the static target the two server features — the live transcript and
+PDF/DOCX upload — are unavailable by design, and the BYOK panel says so instead
+of letting a visitor discover it as a 404. Mechanism, commands and the test that
+pins the build-target coupling:
+[`docs/development.md` → Deployment targets](docs/development.md#deployment-targets).
 
 ### The Pages demo (static) and the node app (the product)
 
@@ -266,7 +294,9 @@ typography scale, radii, spacing, component specs, and usage rules.
 The system is a **black-and-white duet**: near-black ink (`#171717`) on a
 near-white canvas (`#fafafa`), with a single multi-stop mesh gradient (cyan →
 blue → violet → magenta → amber) as the only decorative element, confined to the
-hero. Depth comes from 1px hairlines (`#ebebeb`), not shadows.
+hero. Depth comes from 1px hairlines (`#8c8c8c`, lifted from the reference
+system's `#ebebeb` so that card and input borders clear WCAG 1.4.11's 3:1), not
+shadows.
 
 Three rules that are easy to get wrong:
 

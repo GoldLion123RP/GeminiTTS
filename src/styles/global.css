@@ -62,8 +62,18 @@
   --color-body: #4d4d4d; /* 8.10:1 */
   --color-mute: #6b6b6b; /* 5.11:1 — DESIGN.md literal #8f8f8f was 3.10:1 */
   --color-faint: #727272; /* 4.61:1 — DESIGN.md literal #a1a1a1 was 2.58:1 */
-  --color-hairline: #ebebeb;
-  --color-hairline-soft: #f2f2f2;
+  /* `hairline` is a *boundary*, not a text token, so it is held to WCAG 1.4.11
+     (3:1) rather than AA's 4.5:1. The DESIGN.md literal #ebebeb measured
+     1.14:1 on canvas and 1.19:1 in cards, which is below the threshold of
+     detectable by many users at any calibration — every card read as an
+     unbordered white slab. #8c8c8c measures 3.22:1 on canvas and 3.36:1 on
+     elevated, the harder surface being canvas. Still a hairline rather than a
+     rule, and still lighter than `faint` (#727272), so the ink -> body -> mute
+     -> faint text ladder keeps its order. Recorded in DESIGN.md's Colors
+     section beside the three text substitutions. Measured, not eyeballed —
+     `bun run check:contrast` now enforces it. */
+  --color-hairline: #8c8c8c; /* 3.22:1 on canvas, 3.36:1 on elevated */
+  --color-hairline-soft: #f2f2f2; /* a fill, not a boundary — 1.4.11 does not apply */
   --color-canvas: #fafafa;
   --color-elevated: #ffffff; /* colors.canvas-elevated */
   --color-link: #006ce5; /* 4.70:1 — DESIGN.md literal #0070f3 was 4.36:1 */

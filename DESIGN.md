@@ -10,7 +10,7 @@ colors:
   body: "#4d4d4d"
   mute: "#6b6b6b"
   faint: "#727272"
-  hairline: "#ebebeb"
+  hairline: "#8c8c8c"
   hairline-soft: "#f2f2f2"
   canvas: "#fafafa"
   canvas-elevated: "#ffffff"
@@ -240,7 +240,7 @@ Vercel's Geist system is an exercise in subtraction. The page is a near-white sh
 
 Typography does the heavy lifting. **Geist Sans** sets the display headline in tightly-tracked weight-600 (the hero h1 runs -2.4px letter-spacing), and **Geist Mono** appears as small uppercase eyebrows labeling sections like a technical spec sheet. Buttons split into two shapes by context: the marketing CTAs are fully rounded black **pills** (`{rounded.pill}` — 100px, "Start Deploying" / "Get a Demo"), while nav and in-app controls use a tight 6px square (`{rounded.sm}`, "Sign Up" / "Log In"). The contrast between the rounded marketing pill and the square app button is itself a deliberate signal of which surface you're on.
 
-Surfaces barely lift. Cards are white (`{colors.canvas-elevated}`) on the #fafafa canvas, separated by a 1px hairline (`{colors.hairline}` — #ebebeb) and, at most, a whisper-soft layered shadow. Feature sections are built from precise grids of these hairline cards, often holding thin node-graph or code-editor illustrations rendered in the same ink-on-white palette. The page reads like documentation that happens to be selling something — engineered, exact, and confident enough to let a single gradient be the only flourish.
+Surfaces barely lift. Cards are white (`{colors.canvas-elevated}`) on the #fafafa canvas, separated by a 1px hairline (`{colors.hairline}` — #8c8c8c, substituted from the reference #ebebeb for WCAG 1.4.11; see the accessibility note under Colors) and, at most, a whisper-soft layered shadow. Feature sections are built from precise grids of these hairline cards, often holding thin node-graph or code-editor illustrations rendered in the same ink-on-white palette. The page reads like documentation that happens to be selling something — engineered, exact, and confident enough to let a single gradient be the only flourish.
 
 **Key Characteristics:**
 - A single near-black ink (`{colors.ink}`) carries headings, body, primary CTAs, and borders on a near-white canvas (`{colors.canvas}`) — near-zero chromatic chrome.
@@ -267,8 +267,28 @@ Surfaces barely lift. Cards are white (`{colors.canvas-elevated}`) on the #fafaf
 > body text, and every one of them is used for text at 12–16px. The substitutions
 > are the *lightest* change that clears the bar, and the grey ladder keeps its
 > strict ordering (ink 17.18:1 → body 8.10:1 → mute 5.11:1 → faint 4.61:1). The
-> canvas, elevated, hairline, and all accent colours are unchanged: the reference
+> canvas, elevated, and all accent colours are unchanged: the reference
 > system's character is intact, only its illegible floor was lifted.
+
+> **Accessibility substitution, 2026-09-27 (Phase 2, borders).** A fourth value:
+> `hairline` #ebebeb → **#8c8c8c**. `hairline` is a *boundary*, so the bar is
+> WCAG 1.4.11's 3:1 rather than AA's 4.5:1 — and #ebebeb measured 1.14:1 on
+> canvas and 1.19:1 in cards, below the threshold of detectable by many users at
+> any display calibration. Every card, input and divider rendered as an
+> unbordered white slab, which is not the "hairline" this system describes.
+> #8c8c8c measures 3.22:1 on canvas and 3.36:1 in cards, is the *darkest* value
+> that clears 3:1, and still sits lighter than `faint` (#727272), so the
+> ink → body → mute → faint text ladder keeps its order. The token's name, role
+> and every consumer are untouched; only the hex moved, in this file and in
+> `global.css` together.
+>
+> What this does **not** change: the "1px hairline before any shadow" rule. That
+> sentence is about shape and priority — a hairline *is* the definition, and
+> shadow is the addition — not about how light the line is. The rejected
+> alternative was keeping #ebebeb and adding a shadow to every card, which
+> inverts the priority the system is built on. The **dark** theme's hairline
+> (#262626, 1.22–1.31:1) is unchanged and remains below 1.4.11; it is a recorded
+> gap, not a resolution, and `docs/development.md` carries the note.
 
 ### Surface
 - **Canvas** (`{colors.canvas}` — #fafafa): the default page background — the near-white sheet everything sits on.
@@ -282,7 +302,7 @@ Surfaces barely lift. Cards are white (`{colors.canvas-elevated}`) on the #fafaf
 - **Faint** (`{colors.faint}` — #727272): the lowest tier — placeholders, disabled labels.
 
 ### Borders
-- **Hairline** (`{colors.hairline}` — #ebebeb): the 1px border on every card, input, and divider — the structural workhorse of the system.
+- **Hairline** (`{colors.hairline}` — #8c8c8c): the 1px border on every card, input, and divider — the structural workhorse of the system. A boundary, not a text tier: it is held to WCAG 1.4.11's 3:1, and measures 3.22:1 on canvas and 3.36:1 in cards.
 
 ### Semantic
 - **Error** (`{colors.error}` — #ee0000): validation / destructive, with a deep press tier `{colors.error-deep}` (#c50000).
@@ -308,7 +328,7 @@ user's choice is `light`, `dark`, or `system` and is the default `system`.
 |---|---|---|---|
 | `{colors.canvas}` | #fafafa | #0a0a0a | — |
 | `{colors.canvas-elevated}` | #ffffff | #141414 | — |
-| `{colors.hairline}` | #ebebeb | #262626 | — |
+| `{colors.hairline}` | #8c8c8c | #262626 | 3.22:1 light (SC 1.4.11) — dark is a recorded gap |
 | `{colors.ink}` | #171717 | #ededed | 15.74:1 |
 | `{colors.body}` | #4d4d4d | #b0b0b0 | 8.49:1 |
 | `{colors.mute}` | #6b6b6b | #949494 | 6.07:1 |
@@ -327,9 +347,15 @@ Rules for the dark ramp, all of them load-bearing:
   ordered, not evenly spaced.
 - **Every text token clears 4.5:1.** All body copy is 12–16px, so nothing here
   qualifies as WCAG "large text" and the 3:1 allowance never applies.
+- **The dark `hairline` is the one boundary that does not clear 1.4.11.**
+  #262626 measures 1.22:1 in cards and 1.31:1 on canvas. A 1px step on a
+  near-black field reads as a visible edge where the same ratio on near-white
+  does not — but that is a perceptual argument, not an accessibility one, so it
+  is carried as a recorded gap rather than a rule. Do not cite the dark
+  hairline as precedent for lowering a light-theme value.
 - **Semantic colours lighten, they do not flip hue.** Error goes to #ff7b7b and
   warning to #f0b357 — the light values' luminance is unreachable on near-black.
-- Contrast ratios are **computed, not eyeballed**; a perceptual ramp cannot be
+- **Contrast ratios are computed, not eyeballed**; a perceptual ramp cannot be
   validated by eye. Reproduction command: see `docs/development.md`.
 
 ## Typography

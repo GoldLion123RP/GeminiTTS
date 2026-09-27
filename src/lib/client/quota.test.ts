@@ -72,6 +72,24 @@ afterEach(() => {
 /** A fixed "now" for a day boundary, 2026-09-26T12:00:00Z. */
 const NOON = Date.parse('2026-09-26T12:00:00Z');
 
+/**
+ * `MAX_ENTRIES` and `LOG_KEY` are module-private in `quota.ts`. Spelled out here
+ * rather than exported, because the cap is the thing under test and a test that
+ * reads `expect(log).toHaveLength(MAX_ENTRIES)` proves nothing about which
+ * number it is — the duplication is the assertion.
+ */
+const CAP = 200;
+
+/**
+ * How many requests to push past a *full* log. Ten, not two hundred and sixty:
+ * see the note on the cap test for why the count is not what proves anything.
+ */
+const OVERFLOW = 10;
+
+/** Endpoints used only as markers, so a dropped entry is identifiable. */
+const DROPPED_MARKER = 'live-token';
+const KEPT_MARKER = 'extract';
+
 describe('pacificDay', () => {
 	/**
 	 * The provider's daily ceiling resets at midnight Pacific — VERIFIED
@@ -149,14 +167,66 @@ describe('recordSpend', () => {
 		expect(summariseSpend().today).toBe(0);
 	});
 
+	/**
+	 * The cap is the whole assertion, and the boundary is where it lives, so the
+	 * log is seeded already full and then overflowed. What is being checked is
+	 * the *invariant* — however many requests arrive, the stored log is at most
+	 * `CAP` long and the oldest are what go — and a seeded fixture tests that at
+	 * the point where truncation actually happens, where a 260-call loop tested
+	 * it 200 entries short of the only interesting state.
+	 *
+	 * The old loop was also the file's entire cost, and it was not the
+	 * serialisation the plan blamed. Measured on this machine: the quadratic
+	 * `JSON.parse`/`JSON.stringify` of a 200-entry log across 260 calls is 23ms.
+	 * The 10.6s came from `read()` calling `pacificDay()` once per entry, and
+	 * `pacificDay` built a fresh `Intl.DateTimeFormat` on every single call —
+	 * ~0.31ms each, ~34,000 of them. Seeding removes ~98% of those calls and
+	 * keeps the coverage, so the file no longer needs a raised timeout to pass
+	 * on a quiet machine.
+	 *
+	 * The per-entry formatter cost was a production characteristic, and it is
+	 * now fixed: `pacificDay` builds one module-level formatter (D15). Re-measured
+	 * against a full 200-entry log, one `recordSpend` went from 201 constructions
+	 * to 0, and the 201-call path from ~30ms to ~0.5ms. The measurement is the
+	 * reason this comment is worth keeping: it named a cost, and the fix was
+	 * three lines.
+	 */
 	test('caps the log so a long-lived tab cannot grow it without bound', () => {
-		for (let i = 0; i < 260; i++) recordSpend('synthesize', 'server', true);
+		// `recordSpend` always stamps "now" and could not produce a full log
+		// cheaply, so the fixture is written directly — the same approach the
+		// previous-day test already uses, and the reason this file installs a
+		// real `Storage` rather than mocking the accessors.
+		const at = Date.now();
+		const seed = Array.from({ length: CAP }, () => ({
+			endpoint: 'synthesize',
+			provider: 'server',
+			ok: true,
+			at,
+		}));
+		// Two markers bracket the boundary: the oldest entry must be gone, and
+		// the entry that is about to become the oldest must be exactly at the
+		// head. That pins the cut-off to "dropped `OVERFLOW`, no more" instead
+		// of merely "something was dropped".
+		seed[0] = { ...seed[0], endpoint: DROPPED_MARKER };
+		seed[OVERFLOW] = { ...seed[OVERFLOW], endpoint: KEPT_MARKER };
+		session.setItem('geminitts.quota.log', JSON.stringify(seed));
+
+		for (let i = 0; i < OVERFLOW; i++) recordSpend('transcribe', 'byok', true);
+
 		const log = JSON.parse(session.getItem('geminitts.quota.log') ?? '[]');
-		expect(log).toHaveLength(200);
-		// The cap drops the OLDEST entries, so the total is understated by 60
-		// rather than overstated. Erring down is the right direction for a
-		// number whose purpose is to warn.
-		expect(summariseSpend().today).toBe(200);
+		expect(log).toHaveLength(CAP);
+		expect(log[0].endpoint).toBe(KEPT_MARKER);
+		expect(log.some((entry: { endpoint: string }) => entry.endpoint === DROPPED_MARKER)).toBe(
+			false,
+		);
+		// The tail is kept, not the head: the newest entries are the ones a user
+		// reading a daily meter cares about.
+		expect(log[log.length - 1]).toMatchObject({ endpoint: 'transcribe', provider: 'byok' });
+		// 200 seeded plus `OVERFLOW` recorded, so the cap drops the OLDEST and
+		// the total is understated by `OVERFLOW` rather than overstated.
+		// Erring down is the right direction for a number whose purpose is to
+		// warn.
+		expect(summariseSpend().today).toBe(CAP);
 	});
 });
 
