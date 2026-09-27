@@ -1,5 +1,6 @@
 import { GoogleGenAI } from '@google/genai';
 import { getSecret } from 'astro:env/server';
+import { KEY_REFUSED, keyRejectedMessage, keyWasRefused } from './classify';
 
 export class ConfigError extends Error {
   constructor(message: string) {
@@ -61,13 +62,32 @@ function readNumber(value: unknown, key: string): number | undefined {
   return typeof found === 'number' ? found : undefined;
 }
 
+/**
+ * The one sentence a human sees, whatever shape the failure arrived in.
+ *
+ * The key-refusal test runs FIRST, and that ordering is the whole fix. Measured
+ * 2026-09-27: Google answers a *rejected key* with `400 API_KEY_INVALID`, not
+ * 401. So the generic 400 branch below used to claim every revoked key was an
+ * audio-format problem, and the `/API key not valid/i` test that used to sit at
+ * the bottom of this function was unreachable — dead code that read as coverage.
+ * Same defect, same fix as the browser transport: one predicate from
+ * `gemini/classify`, and one sentence from `keyRejectedMessage`, so the server
+ * and the page cannot drift into telling the user two different things about the
+ * same rejected key.
+ *
+ * `status ?? 0` covers an error the SDK threw with no numeric status at all; for
+ * that case there is no status to weigh, so the body decides on its own. Every
+ * other status keeps its existing precedence — in particular a 5xx still reports
+ * Gemini as unavailable rather than second-guessing a key from a body text.
+ */
 function plainMessage(status: number | undefined, raw: string): string {
+  if (keyWasRefused(status ?? 0, raw) || (status === undefined && KEY_REFUSED.test(raw))) {
+    return keyRejectedMessage('env');
+  }
   if (status === 400) return 'Gemini rejected the request. The audio format, language, or voice may be unsupported.';
-  if (status === 401 || status === 403) return 'Gemini rejected the API key. Check GEMINI_API_KEY in your .env file.';
   if (status === 413) return 'The request was too large for Gemini. Record for less time, or split the text.';
   if (status === 429) return 'Gemini rate limit reached. Wait a moment and try again.';
   if (status !== undefined && status >= 500) return 'Gemini is unavailable right now. Try again shortly.';
-  if (/API key not valid/i.test(raw)) return 'Gemini rejected the API key. Check GEMINI_API_KEY in your .env file.';
   if (/exceeded|quota|billing/i.test(raw)) return 'This request exceeded the quota on the Gemini API key.';
   return 'Gemini could not complete the request.';
 }

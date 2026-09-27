@@ -19,6 +19,17 @@
 // Live WebSocket can only authenticate via a query parameter (Phase 0.2), so
 // routing it through the browser would put the key in history. The exclusion
 // is stated in the UI rather than discovered as a broken feature later.
+//
+// `serverAvailable()` is the build-target fact, read once here so the panel can
+// tell a visitor on the static demo what is true before they press anything.
+// On GitHub Pages this bundle has no server process at all, so the honest
+// default is the user's own key and the honest sentence is that two of the
+// five features are not here. Both were discovered per request, as a 404
+// explained back to the user, until `lib/client/capability.ts` made the answer
+// available at build time.
+import { serverAvailable } from '../lib/client/capability';
+
+const serverPresent = serverAvailable();
 ---
 
 <section
@@ -28,16 +39,39 @@
 >
 	<div class="flex flex-col gap-2">
 		<p class="font-mono text-xs leading-4 font-medium tracking-normal text-mute uppercase">
-			Optional
+			{serverPresent ? 'Optional' : 'Required on this deployment'}
 		</p>
 		<h2 id="byok-heading" class="text-xl leading-7 text-balance font-semibold tracking-normal text-ink latin:tracking-[-0.02em]">
 			Use your own Gemini key
 		</h2>
 		<p class="text-sm leading-5 text-body">
-			Keep the default and requests go through this app's server on the free tier. Add a key
-			and your browser talks to Google directly, so the key never reaches this app at all.
+			{
+				serverPresent
+					? 'Keep the default and requests go through this app’s server on the free tier. Add a key and your browser talks to Google directly, so the key never reaches this app at all.'
+					: 'This is the static demo, and it runs no server — so there is no server key to use. Add a key and your browser talks to Google directly. The key never reaches any server, because there isn’t one.'
+			}
 		</p>
 	</div>
+
+	<!--
+		Said once, up front, on a static build. `provider.ts` already turns a 404
+		from an `always-server` endpoint into a 501 with a sentence explaining
+		it, but that sentence arrives only after the user has typed something and
+		waited. A constraint the build knows about belongs in the first screen,
+		not in an error message three clicks later.
+	-->
+	{
+		!serverPresent && (
+			<div class="mt-6 rounded-app border border-hairline bg-hairline-soft p-3 text-xs leading-4 text-body">
+				<p class="font-medium text-ink">Two features are not part of this demo</p>
+				<p class="mt-2">
+					<b>Live transcription</b> needs a WebSocket, and <b>PDF and Word extraction</b> needs a
+					Node process. Neither can run from a static page. Everything else — text and file to
+					speech, recording, and the cost estimate — works from your browser.
+				</p>
+			</div>
+		)
+	}
 
 	<!-- The provider choice is a radio group, not a toggle. A binary control
 	     cannot honestly represent "off / on / on but misconfigured", and the
@@ -57,10 +91,16 @@
 					name="byok-provider"
 					type="radio"
 					value="server"
-					checked
+					checked={serverPresent}
 					class="size-4 shrink-0 cursor-pointer accent-ink"
 				/>
-				<span>This app's server (default)</span>
+				<span>
+					{
+						serverPresent
+							? 'This app’s server (default)'
+							: 'This app’s server — not available on this deployment'
+					}
+				</span>
 			</label>
 
 			<label
@@ -72,6 +112,7 @@
 					name="byok-provider"
 					type="radio"
 					value="byok"
+					checked={!serverPresent}
 					class="size-4 shrink-0 cursor-pointer accent-ink"
 				/>
 				<span>My own key, sent from this browser</span>
@@ -83,7 +124,7 @@
 	     selected: a disabled control is skipped by keyboard traversal and would
 	     make the whole form unreachable for a screen-reader user until they
 	     first chose the other option. `hidden` keeps it out of the tree. -->
-	<div id="byok-key-fields" class="mt-6 hidden flex-col gap-3">
+	<div id="byok-key-fields" class="mt-6 flex-col gap-3" hidden={serverPresent}>
 		<div class="flex flex-col gap-2">
 			<label
 				class="font-mono text-xs leading-4 font-medium tracking-normal text-mute uppercase"
@@ -161,14 +202,28 @@
 			<li>Sent only to Google, as an <code class="font-mono">x-goog-api-key</code> header.</li>
 			<li>Never sent to this app's server, and never written into a web address.</li>
 			<li>
-				<strong class="font-semibold text-ink">Live transcription still uses the server.</strong>
-				Its connection can only carry a key inside the web address, which browsers record in
-				history, so it is never given your key.
+				<strong class="font-semibold text-ink">
+					{
+						serverPresent
+							? 'Live transcription still uses the server.'
+							: 'Live transcription is not in this demo at all.'
+					}
+				</strong>
+				{
+					serverPresent
+						? 'Its connection can only carry a key inside the web address, which browsers record in history, so it is never given your key.'
+						: 'It needs a WebSocket, and a static page has none.'
+				}
 			</li>
 		</ul>
 		<p class="mt-2">
 			Requests you make count against your own Google project's quota, not this app's. PDF and
-			Word text extraction also runs on the server and never sees your key.
+			Word text extraction
+			{
+				serverPresent
+					? ' also runs on the server and never sees your key.'
+					: ' is not part of this demo; paste the text instead.'
+			}
 		</p>
 	</div>
 </section>
@@ -181,7 +236,9 @@
 	// it. A security statement that can drift from the code is worse than no
 	// statement at all.
 	import { byokCovers } from '../lib/client/provider';
-	import { clearKey, looksLikeGeminiKey, readKey, readMode, writeKey, writeMode } from '../lib/client/keystore';
+	import { clearKey, normalizeKey, readKey, readMode, writeKey, writeMode } from '../lib/client/keystore';
+	import { testKey } from '../lib/client/key-probe';
+	import { serverAvailable } from '../lib/client/capability';
 
 	const panel = document.getElementById('byok');
 	if (panel) {
@@ -245,21 +302,80 @@
 		});
 
 		save?.addEventListener('click', () => {
-			const value = keyInput?.value.trim() ?? '';
+			void saveAndTest();
+		});
+
+		/**
+		 * PHASE 1 — the button is now true to its label.
+		 *
+		 * It used to run a regular expression, store the string, and tell the
+		 * user to go and generate something to find out whether the key worked.
+		 * The label said "and test"; nothing tested. That is what turned a
+		 * revoked key into a "BYOK is broken" report, because the first
+		 * evidence the user ever saw was a generation failure naming their
+		 * audio format.
+		 *
+		 * The three rules below are the whole design:
+		 *
+		 *   - A REJECTED key is not stored. `provider.ts` sends whatever is in
+		 *     storage, and the retry predicate cannot tell a key failure from a
+		 *     content failure — so a stored bad key burns the user's quota on
+		 *     every single attempt, forever, and there is no way for them to
+		 *     know why.
+		 *   - An INCONCLUSIVE probe still stores. The network failed, not the
+		 *     key. Refusing to save on `unknown` would lock a legitimate
+		 *     visitor out because their train went into a tunnel, and the
+		 *     honest thing to say is "could not check", which is a different
+		 *     sentence from "your key is wrong".
+		 *   - The control is disabled in flight. A second click mid-probe
+		 *     would race two writes to the same storage key, and a button that
+		 *     does nothing while looking busy is indistinguishable from one
+		 *     that has hung.
+		 */
+		async function saveAndTest(): Promise<void> {
+			const value = normalizeKey(keyInput?.value ?? '');
 			if (value.length === 0) {
 				say('Paste a key first.', 'error');
 				return;
 			}
-			if (!looksLikeGeminiKey(value)) {
-				say('That does not look like a Gemini key. Keys from AI Studio start with AQ.Ab (or AIza on older keys).', 'error');
+
+			if (save) save.disabled = true;
+			say('Checking this key with Google…');
+
+			let result;
+			try {
+				result = await testKey(value);
+			} catch (cause) {
+				// `testKey` resolves `unknown` rather than throwing, so this is
+				// unreachable in normal operation. It stays because a panel
+				// button that dies in an unhandled rejection leaves the copy
+				// frozen on "Checking…" forever, and the cost of one branch is
+				// smaller than the cost of a permanently stalled control.
+				if (save) save.disabled = false;
+				say('Could not check this key. Nothing was saved.', 'error');
+				console.warn('[byok] key probe threw', cause);
 				return;
 			}
+			if (save) save.disabled = false;
+
+			if (result.verdict === 'rejected') {
+				say(`Gemini rejected this key. ${result.detail} Nothing was saved.`, 'error');
+				return;
+			}
+
 			writeKey(value, remember?.checked ?? false);
 			writeMode('byok');
 			sync();
 			if (keyInput) keyInput.value = '';
-			say('Key saved. Test it by generating or transcribing something.');
-		});
+
+			if (result.verdict === 'accepted' && result.state === 'quota_exhausted') {
+				say('Key saved, and Gemini accepted it. This Google project has no TTS quota left right now.');
+			} else if (result.verdict === 'accepted') {
+				say('Key saved, and Gemini accepted it.');
+			} else {
+				say('Key saved. Google could not be reached, so it was not verified.');
+			}
+		}
 
 		clear?.addEventListener('click', () => {
 			// PHASE 5.4: a destructive control asks once.
@@ -295,6 +411,14 @@
 		// markup above would be false. Assert it once, loudly, in dev.
 		if (import.meta.env.DEV && byokCovers('live-token')) {
 			console.warn('[byok] live-token is routable to the browser; the security copy needs review.');
+		}
+
+		// The rendered default has to agree with the build target. If it ever
+		// stops agreeing, the first thing a visitor does is press a button that
+		// provably cannot work — which is the failure this panel was changed to
+		// prevent, and one no type checker can see.
+		if (import.meta.env.DEV && !serverAvailable() && byokRadio?.checked !== true) {
+			console.warn('[byok] static build, but the server provider is selected. Check the default follows `serverAvailable()`.');
 		}
 
 		sync();

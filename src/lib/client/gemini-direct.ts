@@ -26,6 +26,7 @@
 
 import { chunkText } from '../audio/chunk';
 import { pcmToWav, wavDurationSeconds } from '../audio/wav';
+import { keyRejectedMessage, keyWasRefused, redact, type KeyLocation } from '../gemini/classify';
 import { STRUCTURE_MODEL, TTS_MODEL, TRANSCRIBE_MODEL } from '../gemini/models';
 import { languageCodes, type LanguageId } from '../gemini/languages';
 import { resolveVoiceName } from '../gemini/voices';
@@ -75,23 +76,52 @@ function fail(message: string, status: number, detail?: string): Response {
  * Maps an upstream status onto the same plain-language copy `client.ts` uses
  * server-side, so a user reads one set of words regardless of provider.
  *
- * The 401/403 branch deliberately does NOT say "check your .env file" the way
- * the server copy does: under BYOK there is no `.env` on this machine, and
- * telling someone to edit a file that does not exist on their side is a
- * confidently wrong instruction.
+ * THE BODY DECIDES WHETHER A 400 IS ABOUT THE KEY. Measured 2026-09-27:
+ * Google answers a *rejected key* with **400 `API_KEY_INVALID`**, not 401 —
+ * a preflighted `x-goog-api-key` request from the Pages origin comes back
+ * `400` with a readable body and an `Access-Control-Allow-Origin` echoing the
+ * origin. This function used to branch on status alone, so that 400 fell
+ * through to "The audio format, language, or voice may be unsupported" and
+ * told the user to check their microphone. Guessing wrong is what produced the
+ * report that BYOK "does not work": the key was the problem and the message
+ * named three things that were all fine.
+ *
+ * So the status cannot answer this and the body can. `keyWasRefused` is shared
+ * with the server path (`gemini/client.ts` had the identical dead branch, where
+ * the `/API key not valid/i` test sat below a `return` that made it
+ * unreachable), and only an authentic 400 — one that does not name a
+ * credential — still reports as a request problem.
+ *
+ * `where` is the second half of the same fix. Under BYOK there is no `.env` on
+ * the user's machine, and under the server provider the key is not in this
+ * page at all; naming the wrong one is a confidently wrong instruction. The
+ * browser path only ever runs under BYOK, so `page` is the default and this
+ * module never has to ask which provider it is in — but the parameter exists so
+ * the two providers share one sentence and `gemini-direct.test.ts` can assert
+ * both, rather than the copy drifting per module.
  */
-function upstreamFailure(status: number, raw: string): Response {
-  const response = status === 400
-    ? fail('Gemini rejected the request. The audio format, language, or voice may be unsupported.', 502, raw)
-    : status === 401 || status === 403
-      ? fail('Gemini rejected the API key. Check the key in this page’s settings.', 502, raw)
+export function upstreamFailure(status: number, raw: string, where: KeyLocation = 'page'): Response {
+  /**
+   * The upstream body is scrubbed before it is attached, for the same reason
+   * `gemini/health.ts` scrubs it: error bodies do occasionally echo request
+   * headers, this copy is rendered in the panel's technical disclosure, and its
+   * whole audience is people who will paste it into a bug report. The messages
+   * below are authored, not upstream, so only the detail needed it — and it
+   * needed it here because until this phase the browser path had no
+   * `redact` in scope, which is the other half of the two providers drifting.
+   */
+  const detailText = redact(raw);
+  const response = keyWasRefused(status, raw)
+    ? fail(keyRejectedMessage(where), 502, detailText)
+    : status === 400
+      ? fail('Gemini rejected the request. The audio format, language, or voice may be unsupported.', 502, detailText)
       : status === 413
-        ? fail('The request was too large for Gemini. Record for less time, or split the text.', 413, raw)
+        ? fail('The request was too large for Gemini. Record for less time, or split the text.', 413, detailText)
         : status === 429
-          ? fail('Gemini rate limit reached. Wait a moment and try again.', 429, raw)
+          ? fail('Gemini rate limit reached. Wait a moment and try again.', 429, detailText)
           : status >= 500
-            ? fail('Gemini is unavailable right now. Try again shortly.', 502, raw)
-            : fail('The request could not be completed.', 502, raw);
+            ? fail('Gemini is unavailable right now. Try again shortly.', 502, detailText)
+            : fail('The request could not be completed.', 502, detailText);
 
   /**
    * The retry predicate must see the UPSTREAM status, not this mapped one.

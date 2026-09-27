@@ -24,6 +24,8 @@
  * bundle. Nothing in `src/lib/` server code imports this module.
  */
 
+import { serverAvailable } from './capability';
+
 const STORAGE_KEY = 'geminitts.byok.key';
 const REMEMBER_KEY = 'geminitts.byok.remember';
 const MODE_KEY = 'geminitts.byok.mode';
@@ -31,21 +33,25 @@ const MODE_KEY = 'geminitts.byok.mode';
 export type ProviderMode = 'server' | 'byok';
 
 /**
- * Two key formats are in circulation, and accepting only the old one locks out
- * every current key.
+ * WHY THERE IS NO SHAPE CHECK HERE ANY MORE
  *
- * Google moved AI Studio from "traffic" keys to "auth" keys: new keys are issued
- * as `AQ.Ab…`, unrestricted `AIza…` keys were rejected from 19 June 2026, and
- * `AIza…` keys are rejected outright from September 2026. Both are therefore
- * legal input today, and an `AIza`-only check is not a stricter check — it is a
- * check that rejects valid keys while passing every malformed one.
+ * The removed `looksLikeGeminiKey` guarded a credential the visitor pasted into
+ * their own browser, so it had no security value: a user who can type a key can
+ * also type a different one, and the string never left the origin. All the check
+ * could ever do is reject.
  *
- * The `AQ.` body is matched without pinning the `Ab` that current keys happen to
- * carry, because the point of this test is to catch a pasted URL or a truncated
- * paste, not to authenticate. The suffix length is the same loose floor in both
- * branches: long enough that no real paste is cut, short enough not to matter.
+ * It rejected the right things for the wrong reasons. Google changed the key
+ * format twice in three months — new AI Studio keys are issued as `AQ.Ab…` auth
+ * keys, and unrestricted `AIza…` keys are rejected outright from September 2026
+ * VERIFIED [ai.google.dev/gemini-api/docs/api-key, fetched 2026-09-27] — so a
+ * pinned character class had to be widened twice, and a class wide enough to
+ * cover both eras is wide enough to pass a pasted console URL. Pinning a prefix
+ * rejects valid keys while passing malformed ones; that is the failure mode, not
+ * a stricter check.
+ *
+ * The replacement asks the only question that actually matters, live and without
+ * billing: `testKey` in `src/lib/client/key-probe.ts`.
  */
-const KEY_PATTERN = /^(?:AIza[0-9A-Za-z_-]{20,}|AQ\.[0-9A-Za-z_-]{20,})$/;
 
 /**
  * Guarded so this module is importable from a plain unit test and from SSR.
@@ -65,15 +71,6 @@ function storage(kind: 'session' | 'local'): Storage | null {
   } catch {
     return null;
   }
-}
-
-/**
- * True when the value is shaped like a Gemini key. A format check is not
- * authentication — a well-formed key can still be revoked — but it catches a
- * pasted URL or a truncated paste before it is persisted anywhere.
- */
-export function looksLikeGeminiKey(value: string): boolean {
-  return KEY_PATTERN.test(value.trim());
 }
 
 /** Strips whitespace and any data-URL prefix a paste may carry. */
@@ -137,14 +134,33 @@ export function remembersKey(): boolean {
 }
 
 /**
- * The provider the user selected.
+ * The provider the user selected, or the only one that can work here.
  *
- * Defaults to `'server'`: a visitor with no key must see exactly today's
- * behaviour. There is no path where a key's mere presence silently switches the
- * transport — that would make the trust model invisible.
+ * The default is a function of the deployment target, not a constant. A default
+ * of `'server'` is correct on the node build and provably wrong on the static
+ * GitHub Pages one, where `/api/synthesize` is a GitHub 404: the first thing
+ * every visitor would have done is type text, wait, and read that 404 explained
+ * back to them. The build already knows which of the two it produced
+ * (`serverAvailable`, backed by the build-time `BASE_URL`), so the default now
+ * reads that fact instead of discarding it and reconstructing it from a failure.
+ *
+ * `'server'` stays selectable on the static build anyway. A visitor can still
+ * pick it and gets an honest 501 that says the deployment has no server, and
+ * that is the better of the two outcomes: silently deleting a choice leaves
+ * someone wondering why their preference is gone, while an option that explains
+ * itself teaches them something true about the deployment.
+ *
+ * An explicitly stored mode is never overruled. "The user chose this" outranks
+ * "this is the sensible default here" — a visitor who has deliberately pinned
+ * byok on a server build, or server on a static one, is better served by an
+ * attempt that fails honestly than by a preference that silently rewrites
+ * itself. And the key's mere presence never changes the mode: a transport that
+ * switches on its own makes the trust model invisible.
  */
-export function readMode(): ProviderMode {
-  return storage('local')?.getItem(MODE_KEY) === 'byok' ? 'byok' : 'server';
+export function readMode(serverPresent: boolean = serverAvailable()): ProviderMode {
+  const stored = storage('local')?.getItem(MODE_KEY);
+  if (stored === 'byok' || stored === 'server') return stored;
+  return serverPresent ? 'server' : 'byok';
 }
 
 export function writeMode(mode: ProviderMode): void {

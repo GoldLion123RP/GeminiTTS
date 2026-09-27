@@ -79,19 +79,40 @@ const ALLOWED_HOST = 'generativelanguage.googleapis.com';
  *      reaching our server or a third party — cannot occur in a module that
  *      never imports `lib/client/keystore.ts`.
  *
+ *   3. `key-probe.ts` — the USER's key again, for the "Save and test" control
+ *      to be true to its label. Same credential as (1), same single host, same
+ *      header, and it reaches the key only as an argument from the settings
+ *      panel rather than out of storage — so it cannot widen the blast radius
+ *      the first two entries bound. It is a separate file because it is a
+ *      different question: (1) is "can I do work", this is "is this string a
+ *      key at all", and merging them would put a credential check inside the
+ *      transport that performs generation calls.
+ *
  * The alternative was to route the probe through `@google/genai` (which
  * attaches auth headers internally and so would slip past this gate entirely).
  * Preferring an explicit, greppable header over an invisible SDK mechanism is
- * the better trade: this gate can now see the call, and adding a third file
+ * the better trade: this gate can now see the call, and adding a fourth file
  * here has to be a deliberate edit.
  */
 const ALLOWED_KEY_SOURCES = new Set([
 	join('src', 'lib', 'client', 'gemini-direct.ts'),
+	join('src', 'lib', 'client', 'key-probe.ts'),
 	join('src', 'lib', 'gemini', 'health.ts'),
 ]);
 
-/** Test files that name the header in an assertion string. They attach nothing. */
-const ASSERTION_ONLY = new Set([join('src', 'lib', 'client', 'provider.test.ts'), join('src', 'lib', 'gemini', 'health.test.ts')]);
+/**
+ * Test files that name the header in an assertion string. They attach nothing.
+ *
+ * `key-probe.test.ts` earns its place here for the same reason the other two
+ * are listed: the whole point of its assertions is that the user's key travels
+ * in `x-goog-api-key` and NOT in the URL, so the header has to appear
+ * literally. A test that could not name it could not check the rule.
+ */
+const ASSERTION_ONLY = new Set([
+	join('src', 'lib', 'client', 'provider.test.ts'),
+	join('src', 'lib', 'client', 'key-probe.test.ts'),
+	join('src', 'lib', 'gemini', 'health.test.ts'),
+]);
 
 let failures = 0;
 const fail = (message) => {

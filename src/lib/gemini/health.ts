@@ -14,24 +14,31 @@
  * into a pure classifier and an impure probe so the interesting part (which
  * upstream answer means what) is unit-testable without a network or a key.
  *
- * THE PROBE IS NOT BILLABLE
+ * THE CLASSIFIER IS NOT HERE ANY MORE
  *
- * It is a `models` list with `pageSize=1`, not a `generateContent` call. A
- * health check that spends quota is a health check that manufactures the
- * outage it is looking for, and this app runs on a free tier of ten TTS
- * requests a day.
- *
- * NO KEY MATERIAL, EVER
- *
- * The key is read through `getSecret` and goes out in a header. Nothing in
- * this file formats a key into a message, and `redact` scrubs `AIza…` shaped
- * substrings out of any upstream text that is passed through to the client —
- * upstream error bodies do occasionally echo request headers, and this
- * endpoint's whole audience is people who will paste its output into a bug
- * report.
+ * `classify`, `redact` and `keyWasRefused` moved to `./classify` so the browser
+ * transport and this one cannot disagree about what a `400 API_KEY_INVALID`
+ * means. Only the server-side half is left: reading OUR key and asking Google
+ * about it. The rules the probe obeys are noted at the lines that obey them.
  */
 
+/**
+ * `astro:env/server` is imported statically, as `client.ts` does, and that is
+ * not a style choice: it resolves to `process.env[key]` and exists only inside
+ * the Astro build, so a unit test has to mock the module at the top of the file
+ * *before* importing this one — the pattern `live-token.test.ts` established. A
+ * `beforeAll` hook runs too late, the real specifier has already been resolved.
+ */
 import { getSecret } from 'astro:env/server';
+
+import { classify, redact, type UpstreamState } from './classify';
+
+/**
+ * Re-exported rather than re-implemented. `health.test.ts` imports `classify`
+ * and `redact` from here, and every other caller of this module is a route
+ * handler that should not have to know which file owns the mapping.
+ */
+export { classify, redact };
 
 /** `v1beta`, matching the server path's SDK default and `gemini-direct.ts`. */
 const BASE = 'https://generativelanguage.googleapis.com/v1beta';
@@ -52,8 +59,15 @@ const BASE = 'https://generativelanguage.googleapis.com/v1beta';
  * mapping a 500 or a DNS failure onto one of the other four, and reporting
  * `configured` when the probe failed is exactly the class of false green this
  * endpoint is meant to eliminate.
+ *
+ * The four upstream states are no longer written out here: they are
+ * `UpstreamState` from `./classify`, the one definition the browser transport
+ * also uses, so a fifth state cannot be added for the server path and forgotten
+ * on the client one. `missing` stays local because it is the state where there
+ * is no key to ask about, and that is decided here before any request is made —
+ * `key-probe.ts` is handed a key by definition and so has no such state.
  */
-export type HealthState = 'configured' | 'missing' | 'invalid' | 'quota_exhausted' | 'unknown';
+export type HealthState = UpstreamState | 'missing';
 
 export interface HealthReport {
   readonly state: HealthState;
@@ -61,75 +75,6 @@ export interface HealthReport {
   readonly detail: string;
   /** ISO-8601, for correlating a stale report against a key change. */
   readonly checkedAt: string;
-}
-
-/**
- * The key shapes, scrubbed from anything that leaves this module.
- *
- * This mirrors `looksLikeGeminiKey` in `lib/client/keystore.ts` but is written
- * independently on purpose: a server module must not import a client module,
- * and a secret-scrubbing rule that depends on a browser `Storage` object is
- * one refactor away from not running at all.
- *
- * BOTH prefixes, and the second one is the live one. Google issues new AI
- * Studio keys as `AQ.Ab…`; a scrubber that only knew `AIza` would pass an `AQ`
- * key straight through into a `detail` string, which is served over
- * `/api/health`. A redaction rule that silently stopped matching is worse than
- * no rule, because it reads as coverage.
- */
-const KEY_LIKE = /(?:AIza|AQ\.)[0-9A-Za-z_-]{5,}/g;
-
-/** Replaces anything key-shaped with a fixed, obviously-redacted marker. */
-export function redact(text: string): string {
-  return text.replace(KEY_LIKE, 'AIza…');
-}
-
-/** Caps a detail string so a verbose upstream body cannot become a payload. */
-const MAX_DETAIL = 300;
-
-function detail(raw: string, fallback: string): string {
-  const trimmed = raw.trim();
-  const source = trimmed.length > 0 ? trimmed : fallback;
-  return redact(source).slice(0, MAX_DETAIL);
-}
-
-/**
- * Maps one upstream answer onto a state. Pure — the whole point.
- *
- * `body` is the raw response text, not a parsed object: Gemini's error shape
- * is `{error:{code,message,status}}`, but a proxy in the middle can return
- * HTML, and a regex over the text answers the two cases that matter (a 400
- * carrying `API key not valid`, and a 429 whose message names the quota)
- * without a `try`/`catch` around `JSON.parse` on every response.
- */
-export function classify(status: number, body: string): { state: HealthState; detail: string } {
-  // A 400 on `models` is almost always a rejected key. Phase 0 measured
-  // exactly this: the preflighted `x-goog-api-key` request answers
-  // `400 API_KEY_INVALID` with a readable body rather than a CORS refusal, so
-  // a browser hitting this endpoint sees the same thing a server does.
-  if (status === 400) {
-    if (/API[_ ]KEY[_ ]INVALID|API key not valid/i.test(body)) {
-      return { state: 'invalid', detail: detail(body, 'Gemini rejected the API key.') };
-    }
-    return { state: 'invalid', detail: detail(body, 'Gemini rejected the request made with this key.') };
-  }
-
-  if (status === 401 || status === 403) {
-    return { state: 'invalid', detail: detail(body, 'Gemini rejected the API key.') };
-  }
-
-  if (status === 429) {
-    return { state: 'quota_exhausted', detail: detail(body, 'The project has no Gemini quota left right now.') };
-  }
-
-  if (status >= 200 && status < 300) {
-    return { state: 'configured', detail: 'Gemini accepted the key.' };
-  }
-
-  return {
-    state: 'unknown',
-    detail: detail(body, `The probe reached Gemini but the answer (${status}) says nothing about the key.`),
-  };
 }
 
 /** Injected so the probe is testable without a network. */
@@ -147,11 +92,6 @@ export interface ProbeOptions {
  * A missing key short-circuits before any network call: there is nothing to
  * ask Gemini, and the round-trip would only add a failure mode to the one
  * answer we can give with certainty.
- *
- * `astro:env/server` is imported statically, as `client.ts` does. It resolves
- * to `process.env[key]` and only exists inside the Astro build, so a unit test
- * mocks it at the top of the file before importing this module — the pattern
- * `lib/gemini/live-token.test.ts` already established.
  */
 export async function probeHealth(options: ProbeOptions = {}): Promise<HealthReport> {
   const checkedAt = new Date().toISOString();
@@ -171,6 +111,19 @@ export async function probeHealth(options: ProbeOptions = {}): Promise<HealthRep
   let status: number;
   let body: string;
   try {
+    // THE PROBE IS NOT BILLABLE. A `models` list with `pageSize=1`, never a
+    // `generateContent` call: a health check that spends quota is a health check
+    // that manufactures the outage it is looking for, and this app runs on a
+    // free tier of ten TTS requests a day. The URL is asserted in
+    // `health.test.ts` rather than trusted, because swapping it for a generation
+    // call is invisible in review and expensive in production.
+    //
+    // NO KEY MATERIAL LEAVES THIS MODULE. The key is read through `getSecret`
+    // and goes out in a header; nothing here formats one into a message, and
+    // `redact` scrubs `AIza…` / `AQ.Ab…` substrings out of any upstream text
+    // passed to the client — upstream error bodies do occasionally echo request
+    // headers, and this endpoint's whole audience is people who will paste its
+    // output into a bug report.
     const response = await doFetch(`${BASE}/models?pageSize=1`, {
       headers: { 'x-goog-api-key': apiKey },
       signal: options.signal,

@@ -411,6 +411,62 @@ unavailable on this deployment — as a first-class sentence, not a footnote.
   false and no preference is stored, and `'server'` otherwise.
 - `check:secrets` still exits 0.
 
+**Result, 2026-09-27.** Met, with two additions the plan did not anticipate and
+one it did that is worth stating plainly.
+
+**The lift happened, and it found a second copy of the same bug.** `classify`,
+`redact` and the key-refusal test moved out of `gemini/health.ts` into a new
+zero-import `gemini/classify.ts`, because `health.ts` imports
+`astro:env/server` and therefore could not be imported by the browser that had
+the bug. Having the predicate in one place immediately exposed that
+`gemini/client.ts` — the **server** path — had the identical defect: its
+`plainMessage` returned the audio-format sentence for any 400, which made its
+own `/API key not valid/i` test on the line below **dead code**. So a revoked
+key on the node build was also reported as a microphone fault. The plan's 1.4
+assumed only the browser had drifted; both had. Fixed in the same edit, and
+`src/lib/gemini/client.test.ts` is new as a result.
+
+**`upstreamFailure` gained a `where: KeyLocation` parameter rather than reading
+the mode at runtime.** The browser transport can only run under BYOK, so a
+`readMode()` call there would be a branch that cannot be false — untestable
+dead code dressed as a decision. Parameterising it instead makes the seam
+explicit and lets the test assert both providers' wording, which is what the
+phase's acceptance actually asks for. The copy itself now comes from one
+`keyRejectedMessage()`, so the two providers cannot drift again.
+
+**The browser path had no `redact` in scope, so upstream text reached the UI
+unscrubbed.** A new test caught it: `gemini-direct.test.ts` asserts the failure
+`detail` never echoes key material, and it failed. `health.ts` has scrubbed
+since Phase 5.1 for the reason recorded in its own header — error bodies do
+occasionally echo request headers, and that copy is pasted into bug reports.
+Fixed, and it is the same class of drift 1.4 was about.
+
+**D13 — `quota.test.ts` is marginal against bun's 5-second default timeout.**
+Discovered while running the phase's own acceptance. The file is **unmodified
+by this work** (`git status` on both `quota.ts` and `quota.test.ts` is empty),
+and the test passes in isolation with a raised timeout, so it is slow rather
+than broken:
+
+```
+$ bun test src/lib/client/quota.test.ts
+(fail) recordSpend > caps the log so a long-lived tab cannot grow it without bound [5962.29ms]
+  ^ this test timed out after 5000ms.
+ 15 pass  1 fail
+
+$ bun test --timeout 60000 src/lib/client/quota.test.ts
+ 16 pass  0 fail
+Ran 16 tests across 1 file. [3.85s]
+```
+
+The cause is arithmetic, not flakiness: 260 sequential `recordSpend` calls, each
+re-serialising a log that grows to 200 entries, is quadratic. It passed in the
+Phase 0 run on a more heavily loaded machine and fails in a quieter one, which
+is the worst way for a test to behave. Fixing it means choosing between a
+cheaper fixture and a per-test timeout, and both are changes to a file this
+phase was scoped not to touch. Queued as **1.10** pending approval; it blocks
+F.2, not this phase's own assertions.
+
+
 ---
 
 ### Phase 2 — Light-theme borders (`D9` `D10`)
@@ -557,18 +613,20 @@ been run in this session.
   - [x] 0.3: Run it from `scripts/check-panel.mjs` and from `pages.yml`
   - [x] 0.4: Add the gate to `AGENTS.md`, `docs/development.md` and `.agents/rules/plan_and_documentation.md`
   - [x] 0.5: Prove it RED on current `main` — `byok` named
-  - [ ] 0.6: **NEW — not in the plan as written.** Repair `check:panel`'s own positive
-        control, which is red on `main` and is a Phase 3 blocker. See `D12` below.
-- [ ] **Phase 1: Provider correctness (D1 D3 D5 D6 D7 D8)**
-  - [ ] 1.1: `capability.ts` + test — build-target fact in one place
-  - [ ] 1.2: Target-aware `readMode()` default + test
-  - [ ] 1.3: Body-aware `upstreamFailure` + test (400 → key, not audio)
-  - [ ] 1.4: Share `classify()` so server and browser agree on a 400
-  - [ ] 1.5: Delete `looksLikeGeminiKey` and `KEY_PATTERN`
-  - [ ] 1.6: Real "Save and test" probe — accepted / rejected / unknown
-  - [ ] 1.7: Persist only on accepted or unknown; disable in flight
-  - [ ] 1.8: Honest scope copy for the static deployment (D8)
-  - [ ] 1.9: Fix the stale "on the way" copy on `/`
+  - [x] 0.6: **NEW — not in the plan as written.** Repair `check:panel`'s own positive
+        control, which is red on `main` and is a Phase 3 blocker. See `D12` below. **Done.**
+- [x] **Phase 1: Provider correctness (D1 D3 D5 D6 D7 D8)** — Complete 2026-09-27
+  - [x] 1.1: `capability.ts` + test — build-target fact in one place
+  - [x] 1.2: Target-aware `readMode()` default + test
+  - [x] 1.3: Body-aware `upstreamFailure` + test (400 → key, not audio)
+  - [x] 1.4: Share `classify()` so server and browser agree on a 400
+  - [x] 1.5: Delete `looksLikeGeminiKey` and `KEY_PATTERN`
+  - [x] 1.6: Real "Save and test" probe — accepted / rejected / unknown
+  - [x] 1.7: Persist only on accepted or unknown; disable in flight
+  - [x] 1.8: Honest scope copy for the static deployment (D8)
+  - [x] 1.9: Fix the stale "on the way" copy on `/`
+  - [ ] 1.10: **NEW** — `quota.test.ts` is marginal against bun's 5s default
+        timeout. See `D13` below.
 - [ ] **Phase 2: Light-theme borders (D9 D10)**
   - [ ] 2.1: Re-measure `hairline`; pick a value ≥ 3:1 on white and canvas
   - [ ] 2.2: Change `--color-hairline` in `global.css`
@@ -671,3 +729,5 @@ change. Two reversions need care:
 | --- | --- |
 | 2026-09-27 | Plan drafted from four screenshot reports. Evidence collected into [plans/data/2026-09-27-defect-evidence.md](data/2026-09-27-defect-evidence.md): `.env` key confirmed valid via `/api/health`; Google CORS confirmed working from the Pages origin; Google confirmed to answer a bad key with `400 API_KEY_INVALID`; `check:contrast` confirmed light borders at 1.14:1 / 1.19:1. Status: Review-Only. |
 | 2026-09-27 | **Phase 0 complete.** `scripts/check-spacing.mjs` added with two positive controls (the defect, and the parent-side escape hatch); `check:spacing` registered in `package.json`; spawned from `check:panel`; added as a CI step in `pages.yml`; documented in `AGENTS.md`, `docs/development.md` and `.agents/rules/plan_and_documentation.md`. Proven RED on a static build with `byok` named on both tool pages. Green at the time of writing: `check:contrast`, `check:secrets`, `check:routes`, `check:shell`, `bun run check` (0 errors), `bun test` (285 pass), `bun run build` on both targets. **D12 recorded**: `check:panel`'s own positive control is red on `main` for a CRLF reason unrelated to this plan; queued as 0.6, blocking F.1. |
+| 2026-09-27 | **0.6 complete.** `check:panel`'s positive control now normalises line endings before stripping, restores the file byte-for-byte, and asserts *every* removal removed something instead of merely that the file changed — the `stripped === original` guard could not see a control that was three-quarters stripped. Control proven real again; `TtsPanel.astro` verified restored by SHA-256. |
+| 2026-09-27 | **Phase 1 complete.** New: `lib/gemini/classify.ts` (zero-import shared classifier, lifted out of `health.ts` so the browser can use it), `lib/client/capability.ts` (build-target fact), `lib/client/key-probe.ts` (non-billable `models?pageSize=1` probe). Changed: `health.ts` and `client.ts` onto the shared classifier — **which exposed the same dead-400-branch bug on the server path**, not only the browser; `gemini-direct.ts` body-aware with `KeyLocation` and upstream `redact`; `keystore.ts` target-aware `readMode()`, regex gate deleted; `ByokSettings.astro` really tests, tells a static visitor the truth before they press anything, and no longer claims Live "uses the server" when there is none; `index.astro` no longer says BYOK is on the way; `check-secrets.mjs` allowlist extended with a stated reason. Verified: `bun run build` + `bun run check` exit 0 on **both** targets; `check:contrast` `check:secrets` `check:routes` `check:shell` exit 0; `bun test` 343 pass / 1 pre-existing marginal timeout (D13). Static build confirmed to ship `byok` pre-selected, key fields visible, and the two-feature notice. `check:spacing` still red by design — that is Phase 3. |

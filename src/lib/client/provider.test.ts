@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { byokCovers, request, ROUTES, routeFor, usingByok } from './provider';
-import { clearKey, looksLikeGeminiKey, normalizeKey, readKey, readMode, writeKey, writeMode } from './keystore';
+import { clearKey, normalizeKey, readKey, readMode, writeKey, writeMode } from './keystore';
 
 /** A well-formed but obviously fake key. Never a real credential. */
 const FAKE_KEY = `AIza${'x'.repeat(35)}`;
@@ -62,47 +62,6 @@ afterEach(() => {
 	globalThis.fetch = realFetch;
 });
 
-describe('looksLikeGeminiKey', () => {
-	it('accepts a well-formed key', () => {
-		expect(looksLikeGeminiKey(FAKE_KEY)).toBe(true);
-	});
-
-	// The single most likely bad paste is the console URL rather than the key
-	// itself, so a URL must not pass a shape check.
-	it('rejects a pasted URL', () => {
-		expect(looksLikeGeminiKey('https://aistudio.google.com/apikey')).toBe(false);
-	});
-
-	it('rejects a truncated paste', () => {
-		expect(looksLikeGeminiKey('AIzaShort')).toBe(false);
-	});
-
-	it('rejects an empty string', () => {
-		expect(looksLikeGeminiKey('   ')).toBe(false);
-	});
-
-	// The bug this exists for. Google issues new AI Studio keys as `AQ.Ab…`,
-	// rejected `AIza…` keys from September 2026, and an `AIza`-only check made
-	// every current key unusable while still passing every malformed paste. The
-	// test is named for the format, not the length, so the next prefix change
-	// fails here instead of in a user's face.
-	it('accepts a current AQ auth key', () => {
-		expect(looksLikeGeminiKey(`AQ.Ab${'x'.repeat(35)}`)).toBe(true);
-	});
-
-	it('accepts a legacy AIza key', () => {
-		expect(looksLikeGeminiKey(FAKE_KEY)).toBe(true);
-	});
-
-	it('still rejects a bare AQ with no key body', () => {
-		expect(looksLikeGeminiKey('AQ.')).toBe(false);
-	});
-
-	it('rejects the literal prefix a user might type as a placeholder', () => {
-		expect(looksLikeGeminiKey('AQ.Ab')).toBe(false);
-	});
-});
-
 describe('normalizeKey', () => {
 	it('trims surrounding whitespace', () => {
 		expect(normalizeKey(`  ${FAKE_KEY}\n`)).toBe(FAKE_KEY);
@@ -157,6 +116,10 @@ describe('keystore storage policy', () => {
 	});
 
 	it('defaults the provider to the server key', () => {
+		// The default is now target-dependent; the no-argument form resolves to
+		// the node target under `bun test`, so this still asserts `'server'`.
+		// The static case is covered in keystore.test.ts, which passes the
+		// capability in explicitly instead of relying on the runner's env.
 		expect(readMode()).toBe('server');
 	});
 
