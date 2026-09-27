@@ -214,6 +214,12 @@ console.log(JSON.stringify({
 	watchdogRetry: document.getElementById('tts-alert-retry').textContent,
 	watchdogTested: Boolean(inline),
 }));
+// The panel runs a value watcher on a 250 ms interval, and the stub \`window\`
+// has no \`pagehide\` to stop it. Nothing else in this harness is periodic, so
+// the process would sit on that timer forever and \`spawnSync\` would wait
+// forever with it. Exiting explicitly is the only exit the harness has, and it
+// happens after every assertion-relevant read is already in the JSON above.
+process.exit(0);
 `,
 	);
 	return path;
@@ -447,4 +453,4 @@ if (failures > 0) {
 	console.log(`\n${failures} failure(s). The cost gate is not trustworthy.`);
 	process.exit(1);
 }
-console.log('\nCost gate holds. Generate opens for typed and for restored text.');
+console.log('\nCost gate holds. Generate opens for typed text, for restored text, and for text that arrives with no event at all.');
